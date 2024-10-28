@@ -39,19 +39,32 @@ import numpyro
 import numpyro.distributions as dist
 
 jax.config.update("jax_enable_x64", True)
-from simulate_spectra import batch_gen_spectrum_analytical, batch_gen_spectrum_numerical, batch_gen_spectrum_symbolic
+from simulate_spectra import (
+    batch_gen_spectrum_analytical,
+    batch_gen_spectrum_numerical,
+    batch_gen_spectrum_symbolic,
+)
 
 
 def least_squares(
-    model_parameters: lmfit.Parameters, model_args: tuple, data: jax.Array | np.ndarray, method: Callable
+    model_parameters: lmfit.Parameters,
+    model_args: tuple,
+    data: jax.Array | np.ndarray,
+    method: Callable,
 ):
     """
     Fit data to Bloch-McConnell equations, with option to pick method of solving the equations.
     Solver is Levenberg-Marquardt; basically interface for lmfit.
     Returns best-fit as Parameters class (See https://lmfit.github.io/lmfit-py/ for more info.)
     """
-    if method not in [batch_gen_spectrum_numerical, batch_gen_spectrum_symbolic, batch_gen_spectrum_analytical]:
-        raise NameError("Please insert a valid method of solving Bloch-McConnell equations from the list.")
+    if method not in [
+        batch_gen_spectrum_numerical,
+        batch_gen_spectrum_symbolic,
+        batch_gen_spectrum_analytical,
+    ]:
+        raise NameError(
+            "Please insert a valid method of solving Bloch-McConnell equations from the list."
+        )
     method_jitted = jax.jit(method)
 
     def objective(model_parameters, args, data, method) -> jax.Array:
@@ -61,7 +74,10 @@ def least_squares(
         return resid.flatten()
 
     fit = lmfit.minimize(
-        fcn=objective, params=model_parameters, method="least_squares", args=(model_args, data, method_jitted)
+        fcn=objective,
+        params=model_parameters,
+        method="least_squares",
+        args=(model_args, data, method_jitted),
     )
     # Return best-fit parameters
     return fit.params
@@ -105,7 +121,9 @@ def bayesian_mcmc(
     for par in list(model_parameters.keys()):
         if model_parameters[par].vary:
             if par in ["dwa", "dwb"]:
-                model_parameters[par].prior = dist.Uniform(model_parameters[par].min, model_parameters[par].max)
+                model_parameters[par].prior = dist.Uniform(
+                    model_parameters[par].min, model_parameters[par].max
+                )
             elif par in ["R1a", "R2a", "R1b", "R2b", "k", "f"]:
                 model_parameters[par].prior = dist.TruncatedNormal(
                     (model_parameters[par].min + model_parameters[par].max) / 2,
@@ -126,7 +144,10 @@ def bayesian_mcmc(
     fit_summary = az.summary(
         idata,
         round_to=5,
-        stat_funcs={"median": np.median, "mode": lambda x: az.plots.plot_utils.calculate_point_estimate("mode", x)},
+        stat_funcs={
+            "median": np.median,
+            "mode": lambda x: az.plots.plot_utils.calculate_point_estimate("mode", x),
+        },
         var_names=["~sigma"],
     )
     return idata, fit_summary
@@ -168,7 +189,9 @@ def bayesian_vi(
     for par in list(model_parameters.keys()):
         if model_parameters[par].vary:
             if par in ["dwa", "dwb"]:
-                model_parameters[par].prior = dist.Uniform(model_parameters[par].min, model_parameters[par].max)
+                model_parameters[par].prior = dist.Uniform(
+                    model_parameters[par].min, model_parameters[par].max
+                )
             elif par in ["R1a", "R2a", "R1b", "R2b", "k", "f"]:
                 model_parameters[par].prior = dist.TruncatedNormal(
                     (model_parameters[par].min + model_parameters[par].max) / 2,
@@ -177,16 +200,23 @@ def bayesian_vi(
                 )
     guide = numpyro.infer.autoguide.AutoMultivariateNormal(probabilistic_model)
     optimizer = numpyro.optim.ClippedAdam(step_size=optimizer_step_size)
-    svi = numpyro.infer.SVI(probabilistic_model, guide, optimizer, loss=numpyro.infer.TraceMeanField_ELBO())
+    svi = numpyro.infer.SVI(
+        probabilistic_model, guide, optimizer, loss=numpyro.infer.TraceMeanField_ELBO()
+    )
     svi_result = svi.run(jax.random.key(1), num_steps, model_parameters, model_args, data, method)
     # Get posterior samples
-    posterior_samples = guide.sample_posterior(jax.random.key(2), svi_result.params, sample_shape=(num_samples,))
+    posterior_samples = guide.sample_posterior(
+        jax.random.key(2), svi_result.params, sample_shape=(num_samples,)
+    )
     idata = az.from_dict(posterior_samples)
     fit_summary = az.summary(
         idata,
         kind="stats",
         round_to=5,
-        stat_funcs={"median": np.median, "mode": lambda x: az.plots.plot_utils.calculate_point_estimate("mode", x)},
+        stat_funcs={
+            "median": np.median,
+            "mode": lambda x: az.plots.plot_utils.calculate_point_estimate("mode", x),
+        },
         var_names=["~sigma"],
     )
     return idata, fit_summary
@@ -194,36 +224,38 @@ def bayesian_vi(
 
 # %% TEST
 
-model_parameters = lmfit.Parameters()
-# add with tuples: (NAME INIT_VALUE VARY MIN  MAX)
+# model_parameters = lmfit.Parameters()
+# # add with tuples: (NAME INIT_VALUE VARY MIN  MAX)
 
-model_parameters.add_many(
-    ("R1a", 0.33, False, None, None),
-    ("R2a", 0.5, False, None, None),
-    ("dwa", 0.0, False, None, None),
-    ("R1b", 5.0, True, 0.1, 10.0),
-    ("R2b", 1.0, True, 0.1, 100.0),
-    ("k", 300.0, True, 1.0, 500.0),
-    ("f", 5e-5, True, 1e-5, 5e-3),
-    ("dwb", 3.7, True, 3.0, 4.0),
-)
+# model_parameters.add_many(
+#     ("R1a", 0.33, False, None, None),
+#     ("R2a", 0.5, False, None, None),
+#     ("dwa", 0.0, False, None, None),
+#     ("R1b", 5.0, True, 0.1, 10.0),
+#     ("R2b", 1.0, True, 0.1, 100.0),
+#     ("k", 300.0, True, 1.0, 500.0),
+#     ("f", 5e-5, True, 1e-5, 5e-3),
+#     ("dwb", 3.7, True, 3.0, 4.0),
+# )
 
-offsets = jnp.arange(-6, 6, 0.2, dtype=float)
-powers = jnp.array([1.0, 3.0])
-B0 = 4.7
-gamma = 267.522
-tp = 15.0
-args = offsets, powers, B0, gamma, tp
-#           R1b   R2b  dwa  R1b  R2b   k     f     dwb
-fit_pars = jnp.array([0.33, 0.5, 0.0, 1.0, 30.0, 200.0, 5e-4, 3.5])
-Z = batch_gen_spectrum_numerical(fit_pars, offsets, powers, B0, gamma, tp)
-data = Z + 0.02 * jax.random.normal(jax.random.key(0), jnp.shape(Z))
+# offsets = jnp.arange(-6, 6, 0.2, dtype=float)
+# powers = jnp.array([1.0, 3.0])
+# B0 = 4.7
+# gamma = 267.522
+# tp = 15.0
+# args = offsets, powers, B0, gamma, tp
+# #           R1b   R2b  dwa  R1b  R2b   k     f     dwb
+# fit_pars = jnp.array([0.33, 0.5, 0.0, 1.0, 30.0, 200.0, 5e-4, 3.5])
+# Z = batch_gen_spectrum_numerical(fit_pars, offsets, powers, B0, gamma, tp)
+# data = Z + 0.02 * jax.random.normal(jax.random.key(0), jnp.shape(Z))
 
-best_fit_nls = least_squares(model_parameters, args, data, batch_gen_spectrum_symbolic)
-best_fit_nls.pretty_print()
-idata_mcmc, fit_summary_mcmc = bayesian_mcmc(model_parameters, args, data, batch_gen_spectrum_analytical)
-print(fit_summary_mcmc)
-az.plot_pair(idata_mcmc, kind="kde", var_names=["~sigma", "~R1b"])
-idata_vi, fit_summary_vi = bayesian_vi(model_parameters, args, data, batch_gen_spectrum_analytical)
-print(fit_summary_vi)
-az.plot_pair(idata_vi, kind="kde", var_names=["~sigma", "~R1b"])
+# best_fit_nls = least_squares(model_parameters, args, data, batch_gen_spectrum_symbolic)
+# best_fit_nls.pretty_print()
+# idata_mcmc, fit_summary_mcmc = bayesian_mcmc(
+#     model_parameters, args, data, batch_gen_spectrum_analytical
+# )
+# print(fit_summary_mcmc)
+# az.plot_pair(idata_mcmc, kind="kde", var_names=["~sigma", "~R1b"])
+# idata_vi, fit_summary_vi = bayesian_vi(model_parameters, args, data, batch_gen_spectrum_analytical)
+# print(fit_summary_vi)
+# az.plot_pair(idata_vi, kind="kde", var_names=["~sigma", "~R1b"])

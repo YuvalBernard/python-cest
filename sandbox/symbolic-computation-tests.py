@@ -4,7 +4,7 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
+import matplotsrc.pyplot as plt
 import sympy as sp
 from pyutil import filereplace
 
@@ -58,14 +58,14 @@ def solve_bloch_mcconnell():
         cse=True,
         docstring_limit=0,
     )
-    with open("lib/solve_bloch_mcconnell.py", "w") as text_file:
+    with open("src/solve_bloch_mcconnell.py", "w") as text_file:
         text_file.write("import jax.numpy as jnp\n")
         text_file.write(inspect.getsource(gen_spectrum))
 
-    filereplace("lib/solve_bloch_mcconnell.py", "_lambdifygenerated", "gen_spectrum_symbolic")
-    filereplace("lib/solve_bloch_mcconnell.py", "exp", "jnp.exp")
-    filereplace("lib/solve_bloch_mcconnell.py", "abs", "jnp.absolute")
-    filereplace("lib/solve_bloch_mcconnell.py", "sqrt", "jnp.sqrt")
+    filereplace("src/solve_bloch_mcconnell.py", "_lambdifygenerated", "gen_spectrum_symbolic")
+    filereplace("src/solve_bloch_mcconnell.py", "exp", "jnp.exp")
+    filereplace("src/solve_bloch_mcconnell.py", "abs", "jnp.absolute")
+    filereplace("src/solve_bloch_mcconnell.py", "sqrt", "jnp.sqrt")
     return gen_spectrum, gen_eigenvalue
 
 
@@ -74,7 +74,9 @@ gen_spectrum_symbolic, gen_eigenvalue_symbolic = solve_bloch_mcconnell()
 
 # %% Check eigenvalue and Z-spectrum validity
 @jax.jit
-@partial(jnp.vectorize, excluded=[0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12], signature="()->(k)")  # powers
+@partial(
+    jnp.vectorize, excluded=[0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12], signature="()->(k)"
+)  # powers
 def batch_gen_spectrum_symbolic(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, power, B0, gamma, tp):
     return gen_spectrum_symbolic(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, power, B0, gamma, tp)
 
@@ -86,8 +88,12 @@ def batch_gen_eigenvalue_symbolic(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, p
 
 
 @jax.jit
-@partial(jnp.vectorize, excluded=[0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12], signature="()->(k)")  # powers
-@partial(jnp.vectorize, excluded=[0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12], signature="()->()")  # offsets
+@partial(
+    jnp.vectorize, excluded=[0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12], signature="()->(k)"
+)  # powers
+@partial(
+    jnp.vectorize, excluded=[0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12], signature="()->()"
+)  # offsets
 def batch_gen_spectrum_numerical(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offset, power, B0, gamma, tp):
     dwa *= B0 * gamma
     dwb *= B0 * gamma
@@ -133,8 +139,12 @@ def batch_gen_eigenvalue_numerical(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offset, p
     return -jnp.min(jnp.absolute(eigs))
 
 
-@partial(jnp.vectorize, excluded=[0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12], signature="()->(k)")  # powers
-@partial(jnp.vectorize, excluded=[0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12], signature="()->()")  # offsets
+@partial(
+    jnp.vectorize, excluded=[0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12], signature="()->(k)"
+)  # powers
+@partial(
+    jnp.vectorize, excluded=[0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12], signature="()->()"
+)  # offsets
 def batch_gen_spectrum_analytical(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offset, power, B0, gamma, tp):
     dwa *= B0 * gamma
     dwb *= B0 * gamma
@@ -181,9 +191,15 @@ tp = 4.72
 # gamma = 267.522
 # tp = 15.0
 
-Z_symbolic = batch_gen_spectrum_symbolic(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma, tp)
-Z_numerical = batch_gen_spectrum_numerical(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma, tp)
-Z_analytical = batch_gen_spectrum_analytical(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma, tp)
+Z_symbolic = batch_gen_spectrum_symbolic(
+    R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma, tp
+)
+Z_numerical = batch_gen_spectrum_numerical(
+    R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma, tp
+)
+Z_analytical = batch_gen_spectrum_analytical(
+    R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma, tp
+)
 # lambda_1_symbolic = batch_gen_eigenvalue_symbolic(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma)
 # lambda_1_numerical = batch_gen_eigenvalue_numerical(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma)
 

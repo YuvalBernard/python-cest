@@ -4,10 +4,11 @@ Module that defines the app structure
 
 import sys
 
+import lmfit
 import openpyxl
 import pandas as pd
 from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtGui import QFont, QPixmap
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -17,6 +18,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QStackedLayout,
     QTableWidget,
@@ -33,8 +35,8 @@ class IntroPage(QWizardPage):
         super().__init__()
 
         self.setTitle("Welcome!")
-        self.setPixmap(QWizard.WizardPixmap.WatermarkPixmap, QPixmap("src/images/watermark.jpg"))
-        self.setPixmap(QWizard.WizardPixmap.LogoPixmap, QPixmap("src/images/logo.png"))
+        # self.setPixmap(QWizard.WizardPixmap.WatermarkPixmap, QPixmap("src/images/watermark.jpg"))
+        # self.setPixmap(QWizard.WizardPixmap.LogoPixmap, QPixmap("src/images/logo.png"))
 
         label = QLabel(
             "This Wizard will walk you through all the neccessary steps "
@@ -53,7 +55,8 @@ class DataPage(QWizardPage):
 
         self.setTitle("Select Data")
         page_label = QLabel(
-            "Select .xlsx file with data to fit. Each column should be attributed to a different saturation power."
+            "Select .xlsx file with data to fit.\n"
+            "Each column should be attributed to a different saturation power (in µT)."
         )
         page_label.setWordWrap(True)
 
@@ -100,7 +103,7 @@ class DataPage(QWizardPage):
 
     def save_table(self):
         # Save updated table to DataFrame for later use
-        self.wizard().dataframe = self.write_qtable_to_df(self.table)
+        self.wizard().dataframe = write_qtable_to_df(self.table)
 
 
 class ConstantsGroup(QGroupBox):
@@ -118,17 +121,17 @@ class ConstantsGroup(QGroupBox):
         b0_desc = QLabel("External magnetic field strength")
         gamma_desc = QLabel("Gyromagnetic ratio")
         tp_desc = QLabel("Saturation pulse duration")
-        b1_desc = QLabel("Saturation pulse amplitude")
+        b1_desc = QLabel("Saturation pulse amplitude\n(comma separated list)")
 
         b0_entry = QLineEdit()
         gamma_entry = QLineEdit()
         tp_entry = QLineEdit()
-        b1_entry = QLineEdit()
+        self.b1_entry = QLineEdit(placeholderText="e.g. 1.0, 3.0, 5.0")
 
         parent.registerField("b0", b0_entry)
         parent.registerField("gamma", gamma_entry)
         parent.registerField("tp", tp_entry)
-        parent.registerField("b1", b1_entry)
+        parent.registerField("b1", self.b1_entry)
 
         layout.addWidget(makeBold(QLabel("Parameter")), 0, 0)
         layout.addWidget(makeBold(QLabel("Value")), 0, 1)
@@ -143,8 +146,28 @@ class ConstantsGroup(QGroupBox):
         layout.addWidget(tp_entry, 3, 1, alignment=Qt.AlignmentFlag.AlignTop)
         layout.addWidget(tp_desc, 3, 2, alignment=Qt.AlignmentFlag.AlignTop)
         layout.addWidget(b1_label, 4, 0, alignment=Qt.AlignmentFlag.AlignTop)
-        layout.addWidget(b1_entry, 4, 1, alignment=Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(self.b1_entry, 4, 1, alignment=Qt.AlignmentFlag.AlignTop)
         layout.addWidget(b1_desc, 4, 2, alignment=Qt.AlignmentFlag.AlignTop)
+
+        button = QPushButton("Fill B₁ from table")
+        button.clicked.connect(lambda: self.fill_in_b1_list(parent))
+        layout.addWidget(button, 5, 0, 1, -1)
+
+        # For testing purposes:
+        b0_entry.setText("9.4")
+        gamma_entry.setText("16.546")
+        tp_entry.setText("2")
+
+    def fill_in_b1_list(self, parent):
+        if hasattr(parent.wizard(), "dataframe"):
+            df = parent.wizard().dataframe
+            # if the excel sheet headers are in µT:
+            if df.columns[1:].str.contains("T").any():
+                b1_list = list(df.columns[1:].str.extract(r"([-+]?\d*\.?\d+)", expand=False))
+                self.b1_entry.setText(", ".join([f"{float(b1):.2f}" for b1 in b1_list]))
+
+        else:
+            QMessageBox.warning(self, "Warning", "Please select data excel sheet on previous page.")
 
 
 class VariablesGroup(QGroupBox):
@@ -328,21 +351,21 @@ class VariablesGroup(QGroupBox):
             combo_box.currentIndexChanged.connect(init_val.setDisabled)
             combo_box.currentIndexChanged.connect(val.setEnabled)
 
+            parent.registerField(name_min, min)
+            parent.registerField(name_max, max)
+            parent.registerField(name_init_val, init_val)
+            parent.registerField(name_val, val)
+
             if combo_box.currentText() == "Vary":
                 min.setEnabled(True)
                 max.setEnabled(True)
                 init_val.setEnabled(True)
                 val.setDisabled(True)
-                parent.registerField(name_min, min)
-                parent.registerField(name_max, max)
-                parent.registerField(name_init_val, init_val)
-
             else:
                 min.setDisabled(True)
                 max.setDisabled(True)
                 init_val.setDisabled(True)
                 val.setEnabled(True)
-                parent.registerField(name_val, val)
 
             j = i + 1
             layout.addWidget(label, j, 0)
@@ -352,6 +375,26 @@ class VariablesGroup(QGroupBox):
             layout.addWidget(init_val, j, 4)
             layout.addWidget(val, j, 5)
             layout.addWidget(desc, j, 6)
+
+        # For testing purposes:
+        R1a_val.setText("8")
+        R2a_val.setText("380")
+        dwa_val.setText("0")
+        R1b_min.setText("0.1")
+        R1b_max.setText("10")
+        R1b_init_val.setText("5")
+        R2b_min.setText("1e4")
+        R2b_max.setText("1e5")
+        R2b_init_val.setText("5e4")
+        kb_min.setText("100")
+        kb_max.setText("500")
+        kb_init_val.setText("150")
+        fb_min.setText("1e-4")
+        fb_max.setText("5e-2")
+        fb_init_val.setText("1e-3")
+        dwb_min.setText("-265")
+        dwb_max.setText("-255")
+        dwb_init_val.setText("-260")
 
 
 class SolverGroup(QGroupBox):
@@ -421,8 +464,8 @@ class SolverGroup(QGroupBox):
 
 
 class ModelPage(QWizardPage):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent: QWizard):
+        super().__init__(parent)
 
         self.setTitle("Configure Model Parameters")
         layout = QVBoxLayout(self)
@@ -431,6 +474,61 @@ class ModelPage(QWizardPage):
         layout2.addWidget(SolverGroup(self))
         layout.addLayout(layout2)
         layout.addWidget(VariablesGroup(self))
+        self.setCommitPage(True)
+
+        parent.button(QWizard.WizardButton.CommitButton).clicked.connect(self.makeModel)
+
+    def makeModel(self):
+        self.wizard().model_parameters = lmfit.Parameters()
+
+        for name, init, vary, min, max, val in zip(
+            ["R1a", "R2a", "dwa", "R1b", "R2b", "kb", "fb", "dwb"],
+            [
+                "R1a_init_val",
+                "R2a_init_val",
+                "dwa_init_val",
+                "R1b_init_val",
+                "R2b_init_val",
+                "kb_init_val",
+                "fb_init_val",
+                "dwb_init_val",
+            ],
+            [
+                "R1a_vary",
+                "R2a_vary",
+                "dwa_vary",
+                "R1b_vary",
+                "R2b_vary",
+                "kb_vary",
+                "fb_vary",
+                "dwb_vary",
+            ],
+            ["R1a_min", "R2a_min", "dwa_min", "R1b_min", "R2b_min", "kb_min", "fb_min", "dwb_min"],
+            ["R1a_max", "R2a_max", "dwa_max", "R1b_max", "R2b_max", "kb_max", "fb_max", "dwb_max"],
+            ["R1a_val", "R2a_val", "dwa_val", "R1b_val", "R2b_val", "kb_val", "fb_val", "dwb_val"],
+        ):
+            par_varies = not self.field(vary)  # field returns 0 if parameter varies...
+            if par_varies:
+                par_min = float(self.field(min))
+                par_max = float(self.field(max))
+            else:
+                par_min = None
+                par_max = None
+            try:
+                par_value = float(self.field(init) if par_varies else self.field(val))
+            except ValueError:  # field probably empty. Choose average as init value
+                par_value = (min + max) / 2
+
+            self.wizard().model_parameters.add(
+                name=name, value=par_value, vary=par_varies, min=par_min, max=par_max
+            )
+
+
+class FitPage(QWizardPage):
+    def __init__(self, parent: QWizard):
+        super().__init__(parent)
+
+        self.setTitle("Performing Fitting...")
 
 
 class WizardApp(QWizard):
@@ -441,10 +539,10 @@ class WizardApp(QWizard):
         self.setMinimumSize(QSize(940, 640))
         self.addPage(IntroPage())
         self.addPage(DataPage())
-        self.addPage(ModelPage())
+        self.addPage(ModelPage(self))
+        self.addPage(FitPage(self))
 
 
-@staticmethod
 def LabelAndWidget(txt: str, widget: QWidget):
     layout = QHBoxLayout()
     layout.addWidget(QLabel(txt))
@@ -453,7 +551,6 @@ def LabelAndWidget(txt: str, widget: QWidget):
     return layout
 
 
-@staticmethod
 def makeBold(widget: QWidget):
     f = widget.font()
     f.setWeight(QFont.Weight.DemiBold)
@@ -461,7 +558,6 @@ def makeBold(widget: QWidget):
     return widget
 
 
-@staticmethod
 def write_qtable_to_df(table: QTableWidget):
     col_count = table.columnCount()
     row_count = table.rowCount()
@@ -477,7 +573,6 @@ def write_qtable_to_df(table: QTableWidget):
         df_list.append(df_list2)
 
     df = pd.DataFrame(df_list, columns=headers)
-
     return df
 
 

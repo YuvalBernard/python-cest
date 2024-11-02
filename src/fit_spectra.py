@@ -49,7 +49,7 @@ from simulate_spectra import (
 def least_squares(
     model_parameters: lmfit.Parameters,
     model_args: tuple,
-    data: jax.Array | np.ndarray,
+    data: jax.Array | np.typing.ArrayLike,
     method: Callable,
 ):
     """
@@ -62,9 +62,7 @@ def least_squares(
         batch_gen_spectrum_symbolic,
         batch_gen_spectrum_analytical,
     ]:
-        raise NameError(
-            "Please insert a valid method of solving Bloch-McConnell equations from the list."
-        )
+        raise NameError("Please insert a valid method of solving Bloch-McConnell equations from the list.")
     method_jitted = jax.jit(method)
 
     def objective(model_parameters, args, data, method) -> jax.Array:
@@ -88,9 +86,9 @@ def bayesian_mcmc(
     model_args: tuple,
     data: jax.Array | np.ndarray,
     method: Callable,
-    num_warmup: int = 1000,
-    num_samples: int = 2000,
-    num_chains: int = 4,
+    num_warmup: int | None = 1000,
+    num_samples: int | None = 2000,
+    num_chains: int | None = 4,
 ):
     """
     Fit data to Bloch-McConnell equations, with option to pick method of solving the equations.
@@ -99,6 +97,23 @@ def bayesian_mcmc(
         - posterior samples in arviz `idata' format
         - summary statistics
     """
+    num_warmup = num_warmup if num_warmup is not None else 1000
+    num_samples = num_samples if num_samples is not None else 2000
+    num_chains = num_chains if num_chains is not None else 4
+
+    # set priors for model parameters if they are set to vary.
+    # Each parameter gets a Normal distribution centered about (min, max),
+    # such that the distance between the mean and (min, max) is 3*sigma.
+    for par in list(model_parameters.keys()):
+        if model_parameters[par].vary:
+            if par in ["dwa", "dwb"]:
+                model_parameters[par].prior = dist.Uniform(model_parameters[par].min, model_parameters[par].max)
+            elif par in ["R1a", "R2a", "R1b", "R2b", "kb", "fb"]:
+                model_parameters[par].prior = dist.TruncatedNormal(
+                    (model_parameters[par].min + model_parameters[par].max) / 2,
+                    (model_parameters[par].max - model_parameters[par].min) / 6,
+                    low=0,
+                )
 
     # Define probabilistic model for both Bayesian protocols
     def probabilistic_model(model_parameters, model_args, data, method) -> None:
@@ -114,22 +129,6 @@ def bayesian_mcmc(
         sigma = numpyro.sample("sigma", dist.HalfNormal(0.03))
         model_pred = method(fit_pars, offsets, powers, B0, gamma, tp)
         numpyro.sample("obs", dist.Normal(model_pred, sigma), obs=data)
-
-    # set priors for model parameters if they are set to vary.
-    # Each parameter gets a Normal distribution centered about (min, max),
-    # such that the distance between the mean and (min, max) is 3*sigma.
-    for par in list(model_parameters.keys()):
-        if model_parameters[par].vary:
-            if par in ["dwa", "dwb"]:
-                model_parameters[par].prior = dist.Uniform(
-                    model_parameters[par].min, model_parameters[par].max
-                )
-            elif par in ["R1a", "R2a", "R1b", "R2b", "k", "f"]:
-                model_parameters[par].prior = dist.TruncatedNormal(
-                    (model_parameters[par].min + model_parameters[par].max) / 2,
-                    (model_parameters[par].max - model_parameters[par].min) / 6,
-                    low=0,
-                )
 
     mcmc = numpyro.infer.MCMC(
         numpyro.infer.NUTS(probabilistic_model, init_strategy=numpyro.infer.init_to_uniform),
@@ -150,7 +149,7 @@ def bayesian_mcmc(
         },
         var_names=["~sigma"],
     )
-    return idata, fit_summary
+    return idata
 
 
 def bayesian_vi(
@@ -158,9 +157,9 @@ def bayesian_vi(
     model_args: tuple,
     data: jax.Array | np.ndarray,
     method: Callable,
-    optimizer_step_size: float = 1e-3,
-    num_steps: int = 80_000,
-    num_samples: int = 4000,
+    optimizer_step_size: float | None = 1e-3,
+    num_steps: int | None = 80_000,
+    num_samples: int | None = 4000,
 ):
     """
     Fit data to Bloch-McConnell equations, with option to pick method of solving the equations.
@@ -169,6 +168,21 @@ def bayesian_vi(
         - posterior samples in arviz `idata' format
         - summary statistics
     """
+    optimizer_step_size = optimizer_step_size if optimizer_step_size is not None else 1e-3
+    num_steps = num_steps if num_steps is not None else 80_000
+    num_samples = num_samples if num_samples is not None else num_samples
+
+    # set priors for model parameters if they are set to vary
+    for par in list(model_parameters.keys()):
+        if model_parameters[par].vary:
+            if par in ["dwa", "dwb"]:
+                model_parameters[par].prior = dist.Uniform(model_parameters[par].min, model_parameters[par].max)
+            elif par in ["R1a", "R2a", "R1b", "R2b", "kb", "fb"]:
+                model_parameters[par].prior = dist.TruncatedNormal(
+                    (model_parameters[par].min + model_parameters[par].max) / 2,
+                    (model_parameters[par].max - model_parameters[par].min) / 6,
+                    low=0,
+                )
 
     # Define probabilistic model for both Bayesian protocols
     def probabilistic_model(model_parameters, model_args, data, method) -> None:
@@ -185,29 +199,12 @@ def bayesian_vi(
         model_pred = method(fit_pars, offsets, powers, B0, gamma, tp)
         numpyro.sample("obs", dist.Normal(model_pred, sigma), obs=data)
 
-    # set priors for model parameters if they are set to vary
-    for par in list(model_parameters.keys()):
-        if model_parameters[par].vary:
-            if par in ["dwa", "dwb"]:
-                model_parameters[par].prior = dist.Uniform(
-                    model_parameters[par].min, model_parameters[par].max
-                )
-            elif par in ["R1a", "R2a", "R1b", "R2b", "k", "f"]:
-                model_parameters[par].prior = dist.TruncatedNormal(
-                    (model_parameters[par].min + model_parameters[par].max) / 2,
-                    (model_parameters[par].max - model_parameters[par].min) / 6,
-                    low=0,
-                )
     guide = numpyro.infer.autoguide.AutoMultivariateNormal(probabilistic_model)
     optimizer = numpyro.optim.ClippedAdam(step_size=optimizer_step_size)
-    svi = numpyro.infer.SVI(
-        probabilistic_model, guide, optimizer, loss=numpyro.infer.TraceMeanField_ELBO()
-    )
+    svi = numpyro.infer.SVI(probabilistic_model, guide, optimizer, loss=numpyro.infer.TraceMeanField_ELBO())
     svi_result = svi.run(jax.random.key(1), num_steps, model_parameters, model_args, data, method)
     # Get posterior samples
-    posterior_samples = guide.sample_posterior(
-        jax.random.key(2), svi_result.params, sample_shape=(num_samples,)
-    )
+    posterior_samples = guide.sample_posterior(jax.random.key(2), svi_result.params, sample_shape=(num_samples,))
     idata = az.from_dict(posterior_samples)
     fit_summary = az.summary(
         idata,
@@ -219,7 +216,7 @@ def bayesian_vi(
         },
         var_names=["~sigma"],
     )
-    return idata, fit_summary
+    return idata
 
 
 # %% TEST

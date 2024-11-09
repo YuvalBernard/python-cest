@@ -118,7 +118,7 @@ def bayesian_mcmc(
     # Define probabilistic model for both Bayesian protocols
     def probabilistic_model(model_parameters, model_args, data, method) -> None:
         offsets, powers, B0, gamma, tp = model_args
-        fit_pars = jnp.array(
+        fit_pars = jnp.asarray(
             [
                 numpyro.sample(model_parameters[par].name, model_parameters[par].prior)
                 if model_parameters[par].vary
@@ -149,7 +149,8 @@ def bayesian_mcmc(
         },
         var_names=["~sigma"],
     )
-    return idata
+    posterior_samples = mcmc.get_samples(group_by_chain=True)
+    return posterior_samples
 
 
 def bayesian_vi(
@@ -202,7 +203,7 @@ def bayesian_vi(
     guide = numpyro.infer.autoguide.AutoMultivariateNormal(probabilistic_model)
     optimizer = numpyro.optim.ClippedAdam(step_size=optimizer_step_size)
     svi = numpyro.infer.SVI(probabilistic_model, guide, optimizer, loss=numpyro.infer.TraceMeanField_ELBO())
-    svi_result = svi.run(jax.random.key(1), num_steps, model_parameters, model_args, data, method)
+    svi_result = svi.run(jax.random.key(1), num_steps, model_parameters, model_args, data, method, progress_bar=True)
     # Get posterior samples
     posterior_samples = guide.sample_posterior(jax.random.key(2), svi_result.params, sample_shape=(num_samples,))
     idata = az.from_dict(posterior_samples)
@@ -216,7 +217,7 @@ def bayesian_vi(
         },
         var_names=["~sigma"],
     )
-    return idata
+    return posterior_samples
 
 
 # %% TEST
@@ -230,17 +231,17 @@ def bayesian_vi(
 #     ("dwa", 0.0, False, None, None),
 #     ("R1b", 5.0, True, 0.1, 10.0),
 #     ("R2b", 1.0, True, 0.1, 100.0),
-#     ("k", 300.0, True, 1.0, 500.0),
-#     ("f", 5e-5, True, 1e-5, 5e-3),
+#     ("kb", 300.0, True, 1.0, 500.0),
+#     ("fb", 5e-5, True, 1e-5, 5e-3),
 #     ("dwb", 3.7, True, 3.0, 4.0),
 # )
 
-# offsets = jnp.arange(-6, 6, 0.2, dtype=float)
+# offsets = jnp.arange(-6, 6, 0.1, dtype=float)
 # powers = jnp.array([1.0, 3.0])
 # B0 = 4.7
 # gamma = 267.522
 # tp = 15.0
-# args = offsets, powers, B0, gamma, tp
+# args = (offsets, powers, B0, gamma, tp)
 # #           R1b   R2b  dwa  R1b  R2b   k     f     dwb
 # fit_pars = jnp.array([0.33, 0.5, 0.0, 1.0, 30.0, 200.0, 5e-4, 3.5])
 # Z = batch_gen_spectrum_numerical(fit_pars, offsets, powers, B0, gamma, tp)
@@ -248,11 +249,13 @@ def bayesian_vi(
 
 # best_fit_nls = least_squares(model_parameters, args, data, batch_gen_spectrum_symbolic)
 # best_fit_nls.pretty_print()
-# idata_mcmc, fit_summary_mcmc = bayesian_mcmc(
-#     model_parameters, args, data, batch_gen_spectrum_analytical
+# # posterior_samples_mcmc = bayesian_mcmc(model_parameters, args, data, batch_gen_spectrum_analytical)
+# # posterior_samples_vi = bayesian_vi(model_parameters, args, data, batch_gen_spectrum_analytical)
+# # %%
+# best_fit_pars = tuple(best_fit_nls.valuesdict().values())
+# batch_gen_spectrum_symbolic(best_fit_pars, *args)
+
+# tuple(
+#     np.median(posterior_samples_mcmc[par]) if model_parameters[par].vary else model_parameters[par].value
+#     for par in model_parameters.keys()
 # )
-# print(fit_summary_mcmc)
-# az.plot_pair(idata_mcmc, kind="kde", var_names=["~sigma", "~R1b"])
-# idata_vi, fit_summary_vi = bayesian_vi(model_parameters, args, data, batch_gen_spectrum_analytical)
-# print(fit_summary_vi)
-# az.plot_pair(idata_vi, kind="kde", var_names=["~sigma", "~R1b"])

@@ -6,9 +6,9 @@ import sys
 
 import lmfit
 import numpy as np
-import openpyxl
 import pandas as pd
-from PyQt6.QtCore import QSize, Qt
+import pyqtgraph as pg
+from PyQt6.QtCore import QSize, Qt, QThread, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QApplication,
@@ -25,12 +25,13 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QStackedLayout,
     QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
     QWizard,
     QWizardPage,
 )
+from pyqtgraph.widgets.MatplotlibWidget import MatplotlibWidget
+from pyqtwaitingspinner import SpinnerParameters, WaitingSpinner
 
 from fit_spectra import bayesian_mcmc, bayesian_vi, least_squares
 from simulate_spectra import batch_gen_spectrum_analytical, batch_gen_spectrum_numerical, batch_gen_spectrum_symbolic
@@ -80,8 +81,8 @@ class DataPage(QWizardPage):
         )
         page_label.setWordWrap(True)
 
-        layout = QVBoxLayout(self)
-        layout.addWidget(page_label)
+        self.layout = QVBoxLayout(self)
+        self.layout.addWidget(page_label)
 
         open_button = QPushButton("Open file")
         open_button.clicked.connect(self.get_filename)
@@ -90,35 +91,20 @@ class DataPage(QWizardPage):
         file_select_layout = QHBoxLayout()
         file_select_layout.addWidget(open_button)
         file_select_layout.addWidget(self.label)
-        layout.addLayout(file_select_layout)
+        self.layout.addLayout(file_select_layout)
 
-        self.table = QTableWidget()
-        self.table.setItemDelegate(FloatDelegate(3))
-        layout.addWidget(self.table)
+        self.table = pg.TableWidget(editable=True, sortable=False)
+        self.table.setAlternatingRowColors(True)
         self.table.itemChanged.connect(self.save_table)
 
     def get_filename(self):
         self.filename, extension = QFileDialog.getOpenFileName(self)
         self.label.setText(self.filename)
         if self.filename:
-            self.update_table()
+            data = pd.read_excel(self.filename).T
+            self.table.setData(data.to_dict())
+            self.layout.addWidget(self.table, alignment=Qt.AlignmentFlag.AlignCenter)
             self.save_table()
-
-    def update_table(self):
-        workbook = openpyxl.load_workbook(self.filename)
-        sheet = workbook.active
-        self.table.setRowCount(sheet.max_row)
-        self.table.setColumnCount(sheet.max_column)
-        list_vals = list(sheet.values)
-        self.table.setHorizontalHeaderLabels(list_vals[0])
-        row_index = 0
-        for value_tuple in list_vals[1:]:
-            col_index = 0
-            for value in value_tuple:
-                self.table.setItem(row_index, col_index, QTableWidgetItem(str(value)))
-                col_index += 1
-            row_index += 1
-        self.table.update()
 
     def save_table(self):
         # Save updated table to DataFrame for later use
@@ -396,6 +382,9 @@ class VariablesGroup(QGroupBox):
             layout.addWidget(desc, j, 6)
 
         # For testing purposes:
+        R1a_vary.setCurrentText("Static")
+        R2a_vary.setCurrentText("Static")
+        dwa_vary.setCurrentText("Static")
         R1a_val.setText("8")
         R2a_val.setText("380")
         dwa_val.setText("0")
@@ -495,8 +484,8 @@ class ModelPage(QWizardPage):
         layout2.addWidget(SolverGroup(self))
         layout.addLayout(layout2)
         layout.addWidget(VariablesGroup(self))
-        self.setCommitPage(True)
 
+        self.setCommitPage(True)
         parent.button(QWizard.WizardButton.CommitButton).clicked.connect(self.makeModel)
 
     def makeModel(self):
@@ -543,34 +532,59 @@ class ModelPage(QWizardPage):
             self.wizard().model_parameters.add(name=name, value=par_value, vary=par_varies, min=par_min, max=par_max)
 
 
-class FitPage(QWizardPage):
+class Thread(QThread):
+    result = pyqtSignal(dict)
+
+    def __init__(self, fitting_method, args):
+        super().__init__()
+        self.fitting_method = fitting_method
+        self.args = args
+
+    @pyqtSlot()
+    def run(self):
+        self.result.emit(self.fitting_method(*self.args))
+
+
+class ResultPage(QWizardPage):
     def __init__(self, parent: QWizard):
         super().__init__(parent)
 
-        self.setTitle("Performing Fitting...")
-        layout = QVBoxLayout(self)
-        btn = QPushButton("Press me to fit!")
-        layout.addWidget(btn)
-        btn.clicked.connect(self.perform_fit)
+        spin_pars = SpinnerParameters(disable_parent_when_spinning=True)
+        self.spinner = WaitingSpinner(self, spin_pars)
+
+        self.setTitle("Performing Fitting... Please Wait for the Process to Finish")
+        page_layout = QVBoxLayout(self)
+        page_layout.addWidget(self.spinner)
+        parent.button(QWizard.WizardButton.CommitButton).clicked.connect(self.perform_fit)
+
+        sub_page_layout = QHBoxLayout()
+
+        self.pars_layout = QGridLayout()
+        self.graphWidget = MatplotlibWidget()
+        sub_page_layout.addLayout(self.pars_layout)
+        sub_page_layout.addStretch()
+        sub_page_layout.addWidget(self.graphWidget)
+        self.graphWidget.setVisible(False)
+        page_layout.addLayout(sub_page_layout)
 
     def perform_fit(self):
         df = self.wizard().dataframe
         b0 = float(self.field("b0"))
         gamma = float(self.field("gamma")) * 2 * np.pi
         tp = float(self.field("tp"))
-        powers = np.array([float(b1) for b1 in self.field("b1").split(",")])
-        offsets = df.to_numpy(dtype=float).T[0]
-        data = df.to_numpy(dtype=float).T[1:]
+        self.powers = np.array([float(b1) for b1 in self.field("b1").split(",")])
+        self.offsets = df.to_numpy(dtype=float).T[0]
+        self.data = df.to_numpy(dtype=float).T[1:]
         model_parameters = self.wizard().model_parameters
-        model_args = (offsets, powers, b0, gamma, tp)
+        self.model_args = (self.offsets, self.powers, b0, gamma, tp)
 
         match self.field("solver"):
             case 0:  # "Symbolic"
-                solver = batch_gen_spectrum_symbolic
+                self.solver = batch_gen_spectrum_symbolic
             case 1:  # "Analytical":
-                solver = batch_gen_spectrum_analytical
+                self.solver = batch_gen_spectrum_analytical
             case 2:  # "Numerical"
-                solver = batch_gen_spectrum_numerical
+                self.solver = batch_gen_spectrum_numerical
 
         match self.field("fitting_method"):
             case 0:  # "Bayesian, MCMC"
@@ -578,7 +592,7 @@ class FitPage(QWizardPage):
                 num_warmup = int(n_warmup) if (n_warmup := self.field("num_warmup")) else None
                 num_samples = int(n_samples) if (n_samples := self.field("num_samples")) else None
                 num_chains = int(n_chains) if (n_chains := self.field("num_chains")) else None
-                args = (model_parameters, model_args, data, solver, num_warmup, num_samples, num_chains)
+                args = (model_parameters, self.model_args, self.data, self.solver, num_warmup, num_samples, num_chains)
             case 1:  # "Bayesian, ADVI"
                 fitting_method = bayesian_vi
                 optimizer_step_size = float(step_size) if (step_size := self.field("optimizer_stepsize")) else None
@@ -586,19 +600,79 @@ class FitPage(QWizardPage):
                 num_posterior_samples = int(n_samples) if (n_samples := self.field("num_posterior_samples")) else None
                 args = (
                     model_parameters,
-                    model_args,
-                    data,
-                    solver,
+                    self.model_args,
+                    self.data,
+                    self.solver,
                     optimizer_step_size,
                     optimizer_num_steps,
                     num_posterior_samples,
                 )
             case 2:  # "Nonlinear Least Squares"
                 fitting_method = least_squares
-                args = (model_parameters, model_args, data, solver)
+                args = (model_parameters, self.model_args, self.data, self.solver)
 
         # Do this in a separate thread!
-        self.result = fitting_method(*args)
+        self.thread = Thread(fitting_method, args)
+        self.thread.result.connect(self.summarize_fit)
+        self.thread.start()
+        self.spinner.start()
+
+    def summarize_fit(self, result):
+        self.fit_result = result
+        self.spinner.stop()
+        self.setTitle("Fit Summary")
+
+        self.pars_layout.addWidget(makeBold(QLabel("Parameter")), 0, 0)
+        self.pars_layout.addWidget(makeBold(QLabel("Value")), 0, 1)
+        self.pars_layout.addWidget(makeBold(QLabel("Std")), 0, 2)
+
+        for i, par in enumerate(list(self.wizard().model_parameters.keys())):
+            self.pars_layout.addWidget(QLabel(f"{par}"), i + 1, 0)
+
+            if self.field("fitting_method") == 2:  # Least Squares
+                try:
+                    self.pars_layout.addWidget(QLabel(f"{result[par].value:.3g}"), i + 1, 1)
+                    self.pars_layout.addWidget(
+                        QLabel(f"{result[par].stderr:.3g}" if result[par].vary else "N.A."), i + 1, 2
+                    )
+                except TypeError:
+                    QMessageBox.warning(self, "Error", "Fit Failed. Please try again using another solver.")
+                    return
+            else:  # ADVI or MCMC
+                self.pars_layout.addWidget(
+                    QLabel(
+                        f"{np.median(result[par]):.3g}"
+                        if self.wizard().model_parameters[par].vary
+                        else f"{self.wizard().model_parameters[par].value}"
+                    ),
+                    i + 1,
+                    1,
+                )
+                self.pars_layout.addWidget(
+                    QLabel(f"{np.std(result[par]):.3g}" if self.wizard().model_parameters[par].vary else "N.A."),
+                    i + 1,
+                    2,
+                )
+
+        if self.field("fitting_method") == 2:
+            best_fit_pars = tuple(result.valuesdict().values())
+        else:
+            best_fit_pars = tuple(
+                np.median(result[par])
+                if self.wizard().model_parameters[par].vary
+                else self.wizard().model_parameters[par].value
+                for par in self.wizard().model_parameters.keys()
+            )
+
+        self.fit = self.solver(best_fit_pars, *self.model_args).T
+
+        fig = self.graphWidget.getFigure()
+        fig.set_layout_engine("tight")
+        ax = fig.add_subplot()
+        ax.plot(self.offsets, self.data.T, marker=".", lw=0)
+        ax.set_prop_cycle(None)
+        ax.plot(self.offsets, self.fit)
+        self.graphWidget.setVisible(True)
 
 
 class WizardApp(QWizard):
@@ -610,7 +684,7 @@ class WizardApp(QWizard):
         self.addPage(IntroPage())
         self.addPage(DataPage())
         self.addPage(ModelPage(self))
-        self.addPage(FitPage(self))
+        self.addPage(ResultPage(self))
 
 
 def makeBold(widget: QWidget):
@@ -634,7 +708,7 @@ def write_qtable_to_df(table: QTableWidget):
             df_list2.append(np.nan if table_item is None else str(table_item.text()))
         df_list.append(df_list2)
 
-    df = pd.DataFrame(df_list, columns=headers).dropna(how="all")
+    df = pd.DataFrame(df_list, columns=headers, dtype=float).dropna(how="all")
     return df
 
 

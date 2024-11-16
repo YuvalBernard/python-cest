@@ -29,16 +29,19 @@ def solve_bloch_mcconnell():
             [0, 0, ka, 0, -power * gamma, -(R1b + k)],
         ]
     )
+
     # Define non-homogeneous part of BM-equations
     b = sp.Matrix([0, 0, R1a, 0, 0, R1b * f])
-    # lambda_eff = R1a + (R2a - R1a) * ((power * gamma) ** 2) / (
-    #     (power * gamma) ** 2 + (B0 * gamma * (offset - dwa)) ** 2
-    # )
+    # theta = sp.atan(power/(offset*B0))
+    # lambda_eff = (R1a * sp.cos(theta) + R2a * sp.sin(theta)).simplify()
+    method = "bird"
     A_perturbed = A.subs(k, 0)
-    coeffs = list(reversed(A_perturbed.charpoly().coeffs()))
-    lambda_eff = -6 * coeffs[0] / (coeffs[1] + sp.sqrt(25 * coeffs[1] ** 2 - 60 * coeffs[0] * coeffs[2]))
+    # coeffs = list(reversed(A_perturbed.charpoly().coeffs()))
+    # lambda_eff = -6 * coeffs[0] / (coeffs[1] + sp.sqrt(25 * coeffs[1] ** 2 - 60 * coeffs[0] * coeffs[2]))
+    lambda_eff = A_perturbed.det(method) / A_perturbed.adjugate(method).trace()
     A_rescaled = A - sp.eye(6) * lambda_eff
-    lambda_1 = A_rescaled.det("berkowitz") / A_rescaled.adjugate("berkowitz").trace() + lambda_eff
+
+    lambda_1 = A_rescaled.det(method) / A_rescaled.adjugate(method).trace() + lambda_eff
     v1 = sp.Matrix([power * gamma, 0, offset * B0 * gamma]).normalized()
     # Calculate steady-state solution
     Z_ss = A.LUsolve(-b)[2]
@@ -56,17 +59,18 @@ def solve_bloch_mcconnell():
         [R1a, R2a, dwa, R1b, R2b, k, f, dwb, offset, power, B0, gamma, tp],
         Z,
         modules="jax",
-        cse=lambda expr: sp.cse(expr, order="none", optimizations="basic", list=False),
+        cse=True,
+        # cse=lambda expr: sp.cse(expr, order="none", optimizations="basic", list=False),
         docstring_limit=0,
     )
-    with open("../src/solve_bloch_mcconnell.py", "w") as text_file:
+    with open("src/solve_bloch_mcconnell.py", "w") as text_file:
         text_file.write("import jax.numpy as jnp\n")
         text_file.write(inspect.getsource(gen_spectrum))
 
-    filereplace("../src/solve_bloch_mcconnell.py", "_lambdifygenerated", "gen_spectrum_symbolic")
-    filereplace("../src/solve_bloch_mcconnell.py", "exp", "jnp.exp")
-    filereplace("../src/solve_bloch_mcconnell.py", "abs", "jnp.absolute")
-    filereplace("../src/solve_bloch_mcconnell.py", "sqrt", "jnp.sqrt")
+    filereplace("src/solve_bloch_mcconnell.py", "_lambdifygenerated", "gen_spectrum_symbolic")
+    filereplace("src/solve_bloch_mcconnell.py", "exp", "jnp.exp")
+    filereplace("src/solve_bloch_mcconnell.py", "abs", "jnp.absolute")
+    filereplace("src/solve_bloch_mcconnell.py", "sqrt", "jnp.sqrt")
     return gen_spectrum, gen_eigenvalue
 
 
@@ -154,32 +158,32 @@ def batch_gen_spectrum_analytical(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offset, po
     return Z
 
 
-R1a = 0.33
-R2a = 0.5
-dwa = 0.0
-R1b = 1.0
-R2b = 30.0
-k = 200.0
-f = 5e-4
-dwb = 3.5
-offsets = jnp.arange(-6, 6, 0.01, dtype=float)
-powers = jnp.array([1.0, 3.0], dtype=float)
-B0 = 4.7
-gamma = 267.522
-tp = 15.0
+# R1a = 0.33
+# R2a = 0.5
+# dwa = 0.0
+# R1b = 1.0
+# R2b = 30.0
+# k = 200.0
+# f = 5e-4
+# dwb = 3.5
+# offsets = jnp.arange(-6, 6, 0.01, dtype=float)
+# powers = jnp.array([1.0, 3.0], dtype=float)
+# B0 = 4.7
+# gamma = 267.522
+# tp = 15.0
 
-Z_symbolic = batch_gen_spectrum_symbolic(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma, tp)
-Z_numerical = batch_gen_spectrum_numerical(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma, tp)
-Z_analytical = batch_gen_spectrum_analytical(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma, tp)
-# lambda_1_symbolic = batch_gen_eigenvalue_symbolic(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma)
-# lambda_1_numerical = batch_gen_eigenvalue_numerical(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma)
+# Z_symbolic = batch_gen_spectrum_symbolic(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma, tp)
+# Z_numerical = batch_gen_spectrum_numerical(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma, tp)
+# Z_analytical = batch_gen_spectrum_analytical(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma, tp)
+# # lambda_1_symbolic = batch_gen_eigenvalue_symbolic(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma)
+# # lambda_1_numerical = batch_gen_eigenvalue_numerical(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offsets, powers, B0, gamma)
 
-fig, axs = plt.subplots(ncols=3)
-fig.set_figwidth(14)
-axs[0].plot(offsets, Z_symbolic.T)
-axs[1].plot(offsets, Z_numerical.T)
-axs[2].plot(offsets, Z_analytical.T)
-axs[0].set_title("Symbolic")
-axs[1].set_title("Numerical")
-axs[2].set_title("Analytical")
-fig.show()
+# fig, axs = plt.subplots(ncols=3)
+# fig.set_figwidth(14)
+# axs[0].plot(offsets, Z_symbolic.T)
+# axs[1].plot(offsets, Z_numerical.T)
+# axs[2].plot(offsets, Z_analytical.T)
+# axs[0].set_title("Symbolic")
+# axs[1].set_title("Numerical")
+# axs[2].set_title("Analytical")
+# fig.show()

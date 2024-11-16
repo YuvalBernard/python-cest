@@ -92,3 +92,4 @@ webencodings==0.5.1
 xarray==2024.10.0
 xarray-einstats==0.8.0
 yarg==0.1.9
+sympy2jax

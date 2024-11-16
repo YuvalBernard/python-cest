@@ -9,7 +9,11 @@ Includes:
 from functools import partial
 
 import jax.numpy as jnp
+from jax import config
 from jax.scipy.linalg import expm
+
+config.update("jax_platform_name", "cpu")
+
 
 from solve_bloch_mcconnell import gen_spectrum_symbolic
 

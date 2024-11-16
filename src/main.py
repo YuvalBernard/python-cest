@@ -2,9 +2,12 @@
 Module that defines the app structure
 """
 
+import os
 import sys
 
+import arviz as az
 import lmfit
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
@@ -18,13 +21,11 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
-    QItemDelegate,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
     QStackedLayout,
-    QTableWidget,
     QVBoxLayout,
     QWidget,
     QWizard,
@@ -36,38 +37,9 @@ from pyqtwaitingspinner import SpinnerParameters, WaitingSpinner
 from fit_spectra import bayesian_mcmc, bayesian_vi, least_squares
 from simulate_spectra import batch_gen_spectrum_analytical, batch_gen_spectrum_numerical, batch_gen_spectrum_symbolic
 
-
-class IntroPage(QWizardPage):
-    def __init__(self):
-        super().__init__()
-
-        self.setTitle("Welcome!")
-        # self.setPixmap(QWizard.WizardPixmap.WatermarkPixmap, QPixmap("src/images/watermark.jpg"))
-        # self.setPixmap(QWizard.WizardPixmap.LogoPixmap, QPixmap("src/images/logo.png"))
-
-        label = QLabel(
-            "This Wizard will walk you through all the neccessary steps "
-            "to fit Z-spectra to Bloch-McConnell equations. "
-            "You may chose a solver and a fitting method."
-        )
-        label.setWordWrap(True)
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(label)
-
-
-class FloatDelegate(QItemDelegate):
-    def __init__(self, decimals, parent=None):
-        QItemDelegate.__init__(self, parent=parent)
-        self.nDecimals = decimals
-
-    def paint(self, painter, option, index):
-        value = index.model().data(index, Qt.ItemDataRole.EditRole)
-        try:
-            number = float(value)
-            painter.drawText(option.rect, Qt.AlignmentFlag.AlignLeft, "{:.{}f}".format(number, self.nDecimals))
-        except:
-            QItemDelegate.paint(self, painter, option, index)
+pg.setConfigOption("background", "w")
+pg.setConfigOption("foreground", "k")
+pg.setConfigOption("antialias", True)
 
 
 class DataPage(QWizardPage):
@@ -93,22 +65,37 @@ class DataPage(QWizardPage):
         file_select_layout.addWidget(self.label)
         self.layout.addLayout(file_select_layout)
 
-        self.table = pg.TableWidget(editable=True, sortable=False)
+        self.table = pg.TableWidget(editable=False, sortable=False)
         self.table.setAlternatingRowColors(True)
-        self.table.itemChanged.connect(self.save_table)
+
+        self.graphWidget = pg.PlotWidget()
+        self.graphWidget.invertX()
+        self.graphWidget.setMouseEnabled(False, False)
+        self.graphWidget.setLabel("left", "Z-value [a.u.]")
+        self.graphWidget.setLabel("bottom", "offset [ppm]")
 
     def get_filename(self):
         self.filename, extension = QFileDialog.getOpenFileName(self)
         self.label.setText(self.filename)
         if self.filename:
-            data = pd.read_excel(self.filename).T
-            self.table.setData(data.to_dict())
-            self.layout.addWidget(self.table, alignment=Qt.AlignmentFlag.AlignCenter)
-            self.save_table()
+            self.wizard().data = pd.read_excel(self.filename)
+            self.table.setData(self.wizard().data.T.to_dict())
 
-    def save_table(self):
-        # Save updated table to DataFrame for later use
-        self.wizard().dataframe = write_qtable_to_df(self.table)
+            plot_and_table_layout = QHBoxLayout()
+            plot_and_table_layout.addWidget(self.table, alignment=Qt.AlignmentFlag.AlignCenter)
+            plot_and_table_layout.addWidget(self.graphWidget, alignment=Qt.AlignmentFlag.AlignCenter)
+            self.graphWidget.clear()
+            powers = list(self.wizard().data.columns[1:].str.extract(r"([-+]?\d*\.?\d+)", expand=False))
+            for i in range(n := self.wizard().data.shape[1] - 1):
+                self.graphWidget.addLegend(offset=(1, -1))
+                self.graphWidget.plot(
+                    self.wizard().data.iloc[:, 0],
+                    self.wizard().data.iloc[:, i + 1],
+                    pen=(i, n),
+                    name=f"B₁ = {float(powers[i]):.2g} µT",
+                )
+
+            self.layout.addLayout(plot_and_table_layout)
 
 
 class ConstantsGroup(QGroupBox):
@@ -136,7 +123,7 @@ class ConstantsGroup(QGroupBox):
         parent.registerField("b0", b0_entry)
         parent.registerField("gamma", gamma_entry)
         parent.registerField("tp", tp_entry)
-        parent.registerField("b1", self.b1_entry)
+        parent.registerField("b1*", self.b1_entry)
 
         layout.addWidget(makeBold(QLabel("Parameter")), 0, 0)
         layout.addWidget(makeBold(QLabel("Value")), 0, 1)
@@ -160,12 +147,12 @@ class ConstantsGroup(QGroupBox):
 
         # For testing purposes:
         b0_entry.setText("9.4")
-        gamma_entry.setText("16.546")
-        tp_entry.setText("2")
+        gamma_entry.setText("267.522")
+        tp_entry.setText("10")
 
     def fill_in_b1_list(self, parent):
-        if hasattr(parent.wizard(), "dataframe"):
-            df = parent.wizard().dataframe
+        if hasattr(parent.wizard(), "data"):
+            df = parent.wizard().data
             # if the excel sheet headers are in µT:
             if df.columns[1:].str.contains("T").any():
                 b1_list = list(df.columns[1:].str.extract(r"([-+]?\d*\.?\d+)", expand=False))
@@ -203,14 +190,14 @@ class VariablesGroup(QGroupBox):
         R1a_vary = QComboBox()
         R2a_vary = QComboBox()
         dwa_vary = QComboBox()
-        R1b_vary = QComboBox()
+        self.R1b_vary = QComboBox()
         R2b_vary = QComboBox()
         kb_vary = QComboBox()
         fb_vary = QComboBox()
         dwb_vary = QComboBox()
 
         for combo_box, name in zip(
-            [R1a_vary, R2a_vary, dwa_vary, R1b_vary, R2b_vary, kb_vary, fb_vary, dwb_vary],
+            [R1a_vary, R2a_vary, dwa_vary, self.R1b_vary, R2b_vary, kb_vary, fb_vary, dwb_vary],
             [
                 "R1a_vary",
                 "R2a_vary",
@@ -228,7 +215,7 @@ class VariablesGroup(QGroupBox):
         R1a_val = QLineEdit()
         R2a_val = QLineEdit()
         dwa_val = QLineEdit()
-        R1b_val = QLineEdit()
+        self.R1b_val = QLineEdit()
         R2b_val = QLineEdit()
         kb_val = QLineEdit()
         fb_val = QLineEdit()
@@ -294,10 +281,10 @@ class VariablesGroup(QGroupBox):
                     fb_label,
                     dwb_label,
                 ],
-                [R1a_vary, R2a_vary, dwa_vary, R1b_vary, R2b_vary, kb_vary, fb_vary, dwb_vary],
+                [R1a_vary, R2a_vary, dwa_vary, self.R1b_vary, R2b_vary, kb_vary, fb_vary, dwb_vary],
                 [R1a_min, R2a_min, dwa_min, R1b_min, R2b_min, kb_min, fb_min, dwb_min],
                 [R1a_max, R2a_max, dwa_max, R1b_max, R2b_max, kb_max, fb_max, dwb_max],
-                [R1a_val, R2a_val, dwa_val, R1b_val, R2b_val, kb_val, fb_val, dwb_val],
+                [R1a_val, R2a_val, dwa_val, self.R1b_val, R2b_val, kb_val, fb_val, dwb_val],
                 [
                     R1a_init_val,
                     R2a_init_val,
@@ -385,24 +372,24 @@ class VariablesGroup(QGroupBox):
         R1a_vary.setCurrentText("Static")
         R2a_vary.setCurrentText("Static")
         dwa_vary.setCurrentText("Static")
-        R1a_val.setText("8")
-        R2a_val.setText("380")
+        R1a_val.setText("0.33")
+        R2a_val.setText("0.5")
         dwa_val.setText("0")
         R1b_min.setText("0.1")
         R1b_max.setText("10")
         R1b_init_val.setText("5")
-        R2b_min.setText("1e4")
-        R2b_max.setText("1e5")
-        R2b_init_val.setText("5e4")
-        kb_min.setText("100")
+        R2b_min.setText("0.1")
+        R2b_max.setText("100")
+        R2b_init_val.setText("1")
+        kb_min.setText("10")
         kb_max.setText("500")
         kb_init_val.setText("150")
-        fb_min.setText("1e-4")
-        fb_max.setText("5e-2")
+        fb_min.setText("1e-5")
+        fb_max.setText("5e-3")
         fb_init_val.setText("1e-3")
-        dwb_min.setText("-265")
-        dwb_max.setText("-255")
-        dwb_init_val.setText("-260")
+        dwb_min.setText("3")
+        dwb_max.setText("4")
+        dwb_init_val.setText("3.5")
 
 
 class SolverGroup(QGroupBox):
@@ -415,6 +402,7 @@ class SolverGroup(QGroupBox):
         solver_list = QComboBox()
         solver_list.addItems(["Symbolic", "Analytical", "Numerical"])
         parent.registerField("solver", solver_list)
+        solver_list.currentIndexChanged.connect(lambda: self.validateSolver(parent))
 
         fitter_list = QComboBox()
         fitter_list.addItems(["Bayesian, MCMC", "Bayesian, ADVI", "Nonlinear Least Squares"])
@@ -472,6 +460,16 @@ class SolverGroup(QGroupBox):
         least_squares_container = QLabel("Please fill in initial values for varying parameters.")
         config_page.addWidget(least_squares_container)
 
+    def validateSolver(self, parent):
+        if parent.field("solver") == 1:  # Analytical
+            parent.variablesGroup.R1b_vary.setCurrentText("Static")
+            parent.variablesGroup.R1b_vary.removeItem(0)
+            parent.variablesGroup.R1b_val.setText("0")
+            QMessageBox.information(self, "Info", "Using the Analytical solver disables R1b for fitting!")
+        else:
+            parent.variablesGroup.R1b_vary.clear()
+            parent.variablesGroup.R1b_vary.addItems(["Vary", "Static"])
+
 
 class ModelPage(QWizardPage):
     def __init__(self, parent: QWizard):
@@ -483,7 +481,8 @@ class ModelPage(QWizardPage):
         layout2.addWidget(ConstantsGroup(self))
         layout2.addWidget(SolverGroup(self))
         layout.addLayout(layout2)
-        layout.addWidget(VariablesGroup(self))
+        self.variablesGroup = VariablesGroup(self)
+        layout.addWidget(self.variablesGroup)
 
         self.setCommitPage(True)
         parent.button(QWizard.WizardButton.CommitButton).clicked.connect(self.makeModel)
@@ -559,16 +558,26 @@ class ResultPage(QWizardPage):
 
         sub_page_layout = QHBoxLayout()
 
-        self.pars_layout = QGridLayout()
+        self.summary = QLabel()
+        self.summary.setWordWrap(True)
+        font = self.summary.font()
+        font.setPointSize(11)
+        self.summary.setFont(font)
+
         self.graphWidget = MatplotlibWidget()
-        sub_page_layout.addLayout(self.pars_layout)
+        sub_page_layout.addWidget(self.summary)
         sub_page_layout.addStretch()
         sub_page_layout.addWidget(self.graphWidget)
         self.graphWidget.setVisible(False)
         page_layout.addLayout(sub_page_layout)
 
+        self.button = QPushButton("Save Results")
+        page_layout.addWidget(self.button)
+        self.button.clicked.connect(self.save_results)
+        self.button.setVisible(False)
+
     def perform_fit(self):
-        df = self.wizard().dataframe
+        df = self.wizard().data
         b0 = float(self.field("b0"))
         gamma = float(self.field("gamma")) * 2 * np.pi
         tp = float(self.field("tp"))
@@ -622,57 +631,250 @@ class ResultPage(QWizardPage):
         self.spinner.stop()
         self.setTitle("Fit Summary")
 
-        self.pars_layout.addWidget(makeBold(QLabel("Parameter")), 0, 0)
-        self.pars_layout.addWidget(makeBold(QLabel("Value")), 0, 1)
-        self.pars_layout.addWidget(makeBold(QLabel("Std")), 0, 2)
-
-        for i, par in enumerate(list(self.wizard().model_parameters.keys())):
-            self.pars_layout.addWidget(QLabel(f"{par}"), i + 1, 0)
-
-            if self.field("fitting_method") == 2:  # Least Squares
-                try:
-                    self.pars_layout.addWidget(QLabel(f"{result[par].value:.3g}"), i + 1, 1)
-                    self.pars_layout.addWidget(
-                        QLabel(f"{result[par].stderr:.3g}" if result[par].vary else "N.A."), i + 1, 2
-                    )
-                except TypeError:
-                    QMessageBox.warning(self, "Error", "Fit Failed. Please try again using another solver.")
-                    return
-            else:  # ADVI or MCMC
-                self.pars_layout.addWidget(
-                    QLabel(
-                        f"{np.median(result[par]):.3g}"
-                        if self.wizard().model_parameters[par].vary
-                        else f"{self.wizard().model_parameters[par].value}"
-                    ),
-                    i + 1,
-                    1,
+        match self.field("fitting_method"):
+            case 0:  # MCMC
+                mcmc = result["fit"]
+                self.idata = az.from_numpyro(mcmc)
+                self.fit_summary = az.summary(
+                    self.idata, kind="stats", round_to=4, var_names=["~sigma"], stat_funcs={"median": np.median}
                 )
-                self.pars_layout.addWidget(
-                    QLabel(f"{np.std(result[par]):.3g}" if self.wizard().model_parameters[par].vary else "N.A."),
-                    i + 1,
-                    2,
+                self.summary.setText(self.print_results())
+                best_fit_pars = tuple(
+                    np.median(mcmc.get_samples()[par])
+                    if self.wizard().model_parameters[par].vary
+                    else self.wizard().model_parameters[par].value
+                    for par in self.wizard().model_parameters.keys()
                 )
-
-        if self.field("fitting_method") == 2:
-            best_fit_pars = tuple(result.valuesdict().values())
-        else:
-            best_fit_pars = tuple(
-                np.median(result[par])
-                if self.wizard().model_parameters[par].vary
-                else self.wizard().model_parameters[par].value
-                for par in self.wizard().model_parameters.keys()
-            )
+            case 1:  # ADVI
+                posterior_samples = result["fit"]
+                self.svi_losses = result["loss"]
+                self.idata = az.from_dict(posterior_samples)
+                self.fit_summary = az.summary(
+                    self.idata, kind="stats", round_to=4, var_names=["~sigma"], stat_funcs={"median": np.median}
+                )
+                self.summary.setText(self.print_results())
+                best_fit_pars = tuple(
+                    np.median(posterior_samples[par])
+                    if self.wizard().model_parameters[par].vary
+                    else self.wizard().model_parameters[par].value
+                    for par in self.wizard().model_parameters.keys()
+                )
+            case 2:  # NLS
+                fit_params = result["fit"]
+                self.summary.setText(lmfit.fit_report(fit_params))
+                best_fit_pars = tuple(fit_params.valuesdict().values())
 
         self.fit = self.solver(best_fit_pars, *self.model_args).T
 
-        fig = self.graphWidget.getFigure()
-        fig.set_layout_engine("tight")
-        ax = fig.add_subplot()
-        ax.plot(self.offsets, self.data.T, marker=".", lw=0)
+        self.fig = self.graphWidget.getFigure()
+        self.fig.set_layout_engine("tight")
+        ax = self.fig.add_subplot()
+        ax.plot(self.offsets, self.data.T, marker=".", lw=0, label=[f"B₁={power:.1f} μT" for power in self.powers])
         ax.set_prop_cycle(None)
         ax.plot(self.offsets, self.fit)
+        ax.set_title(
+            "Nonlinear Least Squares Fit" if self.field("fitting_method") == 2 else "Bayesian Fit, Posterior Median"
+        )
+        ax.set_xlabel("offset [ppm]")
+        ax.set_ylabel("Z-value [a.u.]")
+        ax.invert_xaxis()
+        ax.legend()
         self.graphWidget.setVisible(True)
+        self.button.setVisible(True)
+
+    def print_results(self):
+        buff = []
+        add = buff.append
+        parnames = self.wizard().model_parameters.keys()
+        namelen = max(len(n) for n in parnames)
+
+        params = self.fit_summary.T
+
+        add("[[Variables]]")
+        for name in parnames:
+            space = " " * (namelen - len(name))
+            nout = f"{name}:{space}"
+            if name in params.columns:
+                par = params[name]
+                sval = f"{par["median"]:.7g}"
+                serr = f"{par["sd"]:.7g}"
+                try:
+                    spercent = f"({abs(par["sd"]/par["median"]):.2%})"
+                except ZeroDivisionError:
+                    spercent = ""
+                sval = f"{sval} +/-{serr} {spercent}"
+                add(f"    {nout} {sval}")
+            else:
+                par = self.wizard().model_parameters[name]
+                add(f"    {nout} {par.value: .7g} (fixed)")
+
+        return "\n".join(buff)
+
+    def save_results(self):
+        folderPath = QFileDialog.getExistingDirectory(self, "Select Folder")
+        if not folderPath:
+            return
+        fitting_methods = ["Bayesian-MCMC", "Bayesian-ADVI", "Least-Squares"]
+        solvers = ["Symbolic", "Analytical", "Numerical"]
+        saveDir = os.path.join(folderPath, fitting_methods[self.field("fitting_method")], solvers[self.field("solver")])
+        os.makedirs(saveDir, exist_ok=True)
+
+        self.fig.savefig(os.path.join(saveDir, "best_fit.pdf"), format="pdf")
+        with pd.ExcelWriter(os.path.join(saveDir, "best_fit.xlsx"), mode="w") as writer:
+            self.wizard().data.to_excel(writer, sheet_name="data", index=False)
+
+            match self.field("fitting_method"):
+                case 0:  # MCMC
+                    posterior_samples = self.fit_result["fit"].get_samples()
+                    self.best_fit_pars_mean = np.asarray(
+                        [
+                            np.mean(posterior_samples[par])
+                            if self.wizard().model_parameters[par].vary
+                            else self.wizard().model_parameters[par].value
+                            for par in self.wizard().model_parameters.keys()
+                        ]
+                    )
+                    self.best_fit_pars_median = np.asarray(
+                        [
+                            np.median(posterior_samples[par])
+                            if self.wizard().model_parameters[par].vary
+                            else self.wizard().model_parameters[par].value
+                            for par in self.wizard().model_parameters.keys()
+                        ]
+                    )
+                    self.best_fit_pars_mode = np.asarray(
+                        [
+                            az.plots.plot_utils.calculate_point_estimate("mode", posterior_samples[par])
+                            if self.wizard().model_parameters[par].vary
+                            else self.wizard().model_parameters[par].value
+                            for par in self.wizard().model_parameters.keys()
+                        ]
+                    )
+                    self.best_fit_spectra_mean = self.solver(self.best_fit_pars_mean, *self.model_args).T
+                    self.best_fit_spectra_median = self.solver(self.best_fit_pars_median, *self.model_args).T
+                    self.best_fit_spectra_mode = self.solver(self.best_fit_pars_mode, *self.model_args).T
+
+                    pd.DataFrame(
+                        np.c_[self.offsets, self.best_fit_spectra_mean],
+                        columns=["ppm"] + [f"{power:.1f} μT" for power in self.powers],
+                    ).round(3).to_excel(writer, sheet_name="mean", index=False)
+                    pd.DataFrame(
+                        np.c_[self.offsets, self.best_fit_spectra_median],
+                        columns=["ppm"] + [f"{power:.1f} μT" for power in self.powers],
+                    ).round(3).to_excel(writer, sheet_name="median", index=False)
+                    pd.DataFrame(
+                        np.c_[self.offsets, self.best_fit_spectra_mode],
+                        columns=["ppm"] + [f"{power:.1f} μT" for power in self.powers],
+                    ).round(3).to_excel(writer, sheet_name="mode", index=False)
+
+                    az.plot_pair(self.idata, var_names=["~sigma"], kind="kde", marginals=True, divergences=True)[
+                        0, 0
+                    ].get_figure().savefig(os.path.join(saveDir, "pair_plot.pdf"), format="pdf")
+                    az.plot_ess(self.idata, var_names=["~sigma"], relative=True)[0, 0].get_figure().savefig(
+                        os.path.join(saveDir, "ess_plot.pdf"), format="pdf"
+                    )
+                    with open(os.path.join(saveDir, "fit_summary.txt"), "w") as file:
+                        file.write("[Fixed Variables]\n")
+                        for par in self.wizard().model_parameters.keys():
+                            if not self.wizard().model_parameters[par].vary:
+                                file.write(f"{par}\t{self.wizard().model_parameters[par].value}\n")
+                        file.write("\n[Fit Variables]\n")
+                        file.write(
+                            az.summary(
+                                self.idata,
+                                round_to=4,
+                                kind="stats",
+                                stat_funcs={
+                                    "median": np.median,
+                                    "mode": lambda x: az.plots.plot_utils.calculate_point_estimate("mode", x),
+                                },
+                            ).to_string()
+                        )
+                        file.write("\n[Fit Diagnostics]\n")
+                        fit_diagnostics = az.summary(
+                            self.idata,
+                            kind="diagnostics",
+                            round_to=4,
+                        )
+                        file.write(fit_diagnostics.to_string())
+                case 1:  # ADVI
+                    posterior_samples = self.fit_result["fit"]
+                    self.best_fit_pars_mean = np.asarray(
+                        [
+                            np.mean(posterior_samples[par])
+                            if self.wizard().model_parameters[par].vary
+                            else self.wizard().model_parameters[par].value
+                            for par in self.wizard().model_parameters.keys()
+                        ]
+                    )
+                    self.best_fit_pars_median = np.asarray(
+                        [
+                            np.median(posterior_samples[par])
+                            if self.wizard().model_parameters[par].vary
+                            else self.wizard().model_parameters[par].value
+                            for par in self.wizard().model_parameters.keys()
+                        ]
+                    )
+                    self.best_fit_pars_mode = np.asarray(
+                        [
+                            az.plots.plot_utils.calculate_point_estimate("mode", posterior_samples[par])
+                            if self.wizard().model_parameters[par].vary
+                            else self.wizard().model_parameters[par].value
+                            for par in self.wizard().model_parameters.keys()
+                        ]
+                    )
+                    self.best_fit_spectra_mean = self.solver(self.best_fit_pars_mean, *self.model_args).T
+                    self.best_fit_spectra_median = self.solver(self.best_fit_pars_median, *self.model_args).T
+                    self.best_fit_spectra_mode = self.solver(self.best_fit_pars_mode, *self.model_args).T
+
+                    pd.DataFrame(
+                        np.c_[self.offsets, self.best_fit_spectra_mean],
+                        columns=["ppm"] + [f"{power:.1f} μT" for power in self.powers],
+                    ).round(3).to_excel(writer, sheet_name="mean", index=False)
+                    pd.DataFrame(
+                        np.c_[self.offsets, self.best_fit_spectra_median],
+                        columns=["ppm"] + [f"{power:.1f} μT" for power in self.powers],
+                    ).round(3).to_excel(writer, sheet_name="median", index=False)
+                    pd.DataFrame(
+                        np.c_[self.offsets, self.best_fit_spectra_mode],
+                        columns=["ppm"] + [f"{power:.1f} μT" for power in self.powers],
+                    ).round(3).to_excel(writer, sheet_name="mode", index=False)
+
+                    az.plot_pair(self.idata, var_names=["~sigma"], kind="kde", marginals=True)[
+                        0, 0
+                    ].get_figure().savefig(os.path.join(saveDir, "pair_plot.pdf"), format="pdf")
+                    fig, ax = plt.subplots()
+                    ax.plot(self.svi_losses)
+                    ax.set_xlabel("Iteration")
+                    ax.set_ylabel("ELBO")
+                    ax.set_title("SVI Loss per iteration")
+                    fig.savefig(os.path.join(saveDir, "svi_loss.pdf"), format="pdf")
+
+                    with open(os.path.join(saveDir, "fit_summary.txt"), "w") as file:
+                        file.write("[Fixed Variables]\n")
+                        for par in self.wizard().model_parameters.keys():
+                            if not self.wizard().model_parameters[par].vary:
+                                file.write(f"{par}\t{self.wizard().model_parameters[par].value}\n")
+                        file.write("\n[Fit Variables]\n")
+                        file.write(
+                            az.summary(
+                                self.idata,
+                                round_to=4,
+                                kind="stats",
+                                stat_funcs={
+                                    "median": np.median,
+                                    "mode": lambda x: az.plots.plot_utils.calculate_point_estimate("mode", x),
+                                },
+                            ).to_string()
+                        )
+                case 2:  # NLS
+                    df_fit = pd.DataFrame(
+                        np.c_[self.offsets, self.fit], columns=["ppm"] + [f"{power:.2g} μT" for power in self.powers]
+                    )
+                    df_fit.round(3).to_excel(writer, sheet_name="nls", index=False)
+
+                    with open(os.path.join(saveDir, "fit_summary.txt"), "w") as file:
+                        file.write(lmfit.fit_report(self.fit_result["fit"]))
 
 
 class WizardApp(QWizard):
@@ -681,7 +883,6 @@ class WizardApp(QWizard):
 
         self.setWindowTitle("Bloch-McConnellizer")
         self.setMinimumSize(QSize(940, 640))
-        self.addPage(IntroPage())
         self.addPage(DataPage())
         self.addPage(ModelPage(self))
         self.addPage(ResultPage(self))
@@ -692,24 +893,6 @@ def makeBold(widget: QWidget):
     f.setWeight(QFont.Weight.DemiBold)
     widget.setFont(f)
     return widget
-
-
-def write_qtable_to_df(table: QTableWidget):
-    col_count = table.columnCount()
-    row_count = table.rowCount()
-    headers = [str(table.horizontalHeaderItem(i).text()) for i in range(col_count)]
-
-    # df indexing is slow, so use lists
-    df_list = []
-    for row in range(row_count):
-        df_list2 = []
-        for col in range(col_count):
-            table_item = table.item(row, col)
-            df_list2.append(np.nan if table_item is None else str(table_item.text()))
-        df_list.append(df_list2)
-
-    df = pd.DataFrame(df_list, columns=headers, dtype=float).dropna(how="all")
-    return df
 
 
 if __name__ == "__main__":

@@ -5,7 +5,6 @@ import pyqtgraph as pg
 from PyQt6.QtWidgets import QApplication, QHBoxLayout, QMainWindow, QWidget
 from pyqtgraph.widgets.MatplotlibWidget import MatplotlibWidget
 
-
 class plotAndTableWidget(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -19,7 +18,8 @@ class plotAndTableWidget(QMainWindow):
         self.vertical_layout = QHBoxLayout()
         self.setCentralWidget(self.central_widget)
         self.central_widget.setLayout(self.vertical_layout)
-        self.graphWidget = MatplotlibWidget()
+        # self.graphWidget = MatplotlibWidget()
+        self.graphWidget = pg.plot()
 
         self.table = pg.TableWidget(editable=True)
 
@@ -31,10 +31,16 @@ class plotAndTableWidget(QMainWindow):
     def create_data(self):
         data = pd.read_excel("example_data.xlsx")
         self.table.setData(data.T.to_dict())
-        fig = self.graphWidget.getFigure()
-        fig.set_layout_engine("tight")
-        ax = fig.add_subplot()
-        data.plot(x=0, y=range(1, data.shape[1]), ax=ax, marker="o", lw=0)
+        self.graphWidget.invertX()
+        self.graphWidget.setMouseEnabled(False, False)
+        self.graphWidget.setLabel("left", "Z-value [a.u.]")
+        self.graphWidget.setLabel("bottom", "offset [ppm]")
+        for i in range(n := data.shape[1]-1):
+            self.graphWidget.plot(data.iloc[:, 0], data.iloc[:, i+1], pen=(i,n))
+        # fig = self.graphWidget.getFigure()
+        # fig.set_layout_engine("tight")
+        # ax = fig.add_subplot()
+        # data.plot(x=0, y=range(1, data.shape[1]), ax=ax, marker="o", lw=0)
 
 
 def run_program():

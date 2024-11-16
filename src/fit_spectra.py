@@ -29,7 +29,6 @@ Other parameters:
 
 from typing import Callable
 
-import arviz as az
 import jax
 import jax.numpy as jnp
 import jax.random
@@ -39,6 +38,9 @@ import numpyro
 import numpyro.distributions as dist
 
 jax.config.update("jax_enable_x64", True)
+jax.config.update("jax_platform_name", "cpu")
+numpyro.set_host_device_count(4)
+
 from simulate_spectra import (
     batch_gen_spectrum_analytical,
     batch_gen_spectrum_numerical,
@@ -74,11 +76,10 @@ def least_squares(
     fit = lmfit.minimize(
         fcn=objective,
         params=model_parameters,
-        method="least_squares",
+        method="leastsq",
         args=(model_args, data, method_jitted),
     )
-    # Return best-fit parameters
-    return fit.params
+    return {"fit": fit.params}
 
 
 def bayesian_mcmc(
@@ -131,26 +132,20 @@ def bayesian_mcmc(
         numpyro.sample("obs", dist.Normal(model_pred, sigma), obs=data)
 
     mcmc = numpyro.infer.MCMC(
-        numpyro.infer.NUTS(probabilistic_model, init_strategy=numpyro.infer.init_to_uniform),
+        numpyro.infer.NUTS(
+            probabilistic_model,
+            init_strategy=numpyro.infer.init_to_uniform,
+            target_accept_prob=0.85,
+            forward_mode_differentiation=True,
+        ),
         num_warmup=num_warmup,
         num_samples=num_samples,
         num_chains=num_chains,
-        chain_method="sequential",
-        progress_bar=True,
+        chain_method="parallel",
+        progress_bar=False,
     )
     mcmc.run(jax.random.key(1), model_parameters, model_args, data, method)
-    idata = az.from_numpyro(posterior=mcmc)
-    fit_summary = az.summary(
-        idata,
-        round_to=5,
-        stat_funcs={
-            "median": np.median,
-            "mode": lambda x: az.plots.plot_utils.calculate_point_estimate("mode", x),
-        },
-        var_names=["~sigma"],
-    )
-    posterior_samples = mcmc.get_samples(group_by_chain=True)
-    return posterior_samples
+    return {"fit": mcmc}
 
 
 def bayesian_vi(
@@ -159,8 +154,8 @@ def bayesian_vi(
     data: jax.Array | np.ndarray,
     method: Callable,
     optimizer_step_size: float | None = 1e-3,
-    num_steps: int | None = 80_000,
-    num_samples: int | None = 4000,
+    num_steps: int | None = 75_000,
+    num_samples: int | None = 100_000,
 ):
     """
     Fit data to Bloch-McConnell equations, with option to pick method of solving the equations.
@@ -202,22 +197,11 @@ def bayesian_vi(
 
     guide = numpyro.infer.autoguide.AutoMultivariateNormal(probabilistic_model)
     optimizer = numpyro.optim.ClippedAdam(step_size=optimizer_step_size)
-    svi = numpyro.infer.SVI(probabilistic_model, guide, optimizer, loss=numpyro.infer.TraceMeanField_ELBO())
-    svi_result = svi.run(jax.random.key(1), num_steps, model_parameters, model_args, data, method, progress_bar=True)
+    svi = numpyro.infer.SVI(probabilistic_model, guide, optimizer, loss=numpyro.infer.Trace_ELBO())
+    svi_result = svi.run(jax.random.key(1), num_steps, model_parameters, model_args, data, method, progress_bar=False)
     # Get posterior samples
     posterior_samples = guide.sample_posterior(jax.random.key(2), svi_result.params, sample_shape=(num_samples,))
-    idata = az.from_dict(posterior_samples)
-    fit_summary = az.summary(
-        idata,
-        kind="stats",
-        round_to=5,
-        stat_funcs={
-            "median": np.median,
-            "mode": lambda x: az.plots.plot_utils.calculate_point_estimate("mode", x),
-        },
-        var_names=["~sigma"],
-    )
-    return posterior_samples
+    return {"fit": posterior_samples, "loss": svi_result.losses}
 
 
 # %% TEST
@@ -248,14 +232,34 @@ def bayesian_vi(
 # data = Z + 0.02 * jax.random.normal(jax.random.key(0), jnp.shape(Z))
 
 # best_fit_nls = least_squares(model_parameters, args, data, batch_gen_spectrum_symbolic)
-# best_fit_nls.pretty_print()
-# # posterior_samples_mcmc = bayesian_mcmc(model_parameters, args, data, batch_gen_spectrum_analytical)
-# # posterior_samples_vi = bayesian_vi(model_parameters, args, data, batch_gen_spectrum_analytical)
-# # %%
-# best_fit_pars = tuple(best_fit_nls.valuesdict().values())
-# batch_gen_spectrum_symbolic(best_fit_pars, *args)
 
-# tuple(
-#     np.median(posterior_samples_mcmc[par]) if model_parameters[par].vary else model_parameters[par].value
-#     for par in model_parameters.keys()
+# # lmfit.fit_report(best_fit_nls.params)
+# # best_fit_nls.pretty_print()
+# posterior_samples_mcmc = bayesian_mcmc(model_parameters, args, data, batch_gen_spectrum_analytical)
+# posterior_samples_vi = bayesian_vi(
+#     model_parameters, args, data, batch_gen_spectrum_analytical, num_steps=50_000, num_samples=100_000
 # )
+# # # %%
+# # best_fit_pars = tuple(best_fit_nls.valuesdict().values())
+# # batch_gen_spectrum_symbolic(best_fit_pars, *args)
+
+# # tuple(
+# #     np.median(posterior_samples_mcmc[par]) if model_parameters[par].vary else model_parameters[par].value
+# #     for par in model_parameters.keys()
+# # )
+# # %%
+# params, losses, guide = posterior_samples_vi
+# mean = guide.median(params)
+# posterior_samples = az.from_dict(guide.sample_posterior(jax.random.key(1), params, sample_shape=(100_000,)))
+# print(mean)
+# az.summary(posterior_samples, kind="stats", stat_focus="median")
+# %%
+# best_fit_nls["fit"].pretty_print()
+# print(lmfit.fit_report(best_fit_nls["fit"]))
+# # %%
+# import arviz as az
+
+# fit_summary = az.summary(
+#     az.from_numpyro(posterior_samples_mcmc["fit"]), kind="stats", stat_funcs={"median": np.median}, round_to=4
+# )
+# fit_summary.T["R1b"]

@@ -35,7 +35,11 @@ from pyqtgraph.widgets.MatplotlibWidget import MatplotlibWidget
 from pyqtwaitingspinner import SpinnerParameters, WaitingSpinner
 
 from fit_spectra import bayesian_mcmc, bayesian_vi, least_squares
-from simulate_spectra import batch_gen_spectrum_analytical, batch_gen_spectrum_numerical, batch_gen_spectrum_symbolic
+from simulate_spectra import (
+    batch_gen_spectrum_analytical,
+    batch_gen_spectrum_numerical,
+    batch_gen_spectrum_symbolic,
+)
 
 pg.setConfigOption("background", "w")
 pg.setConfigOption("foreground", "k")
@@ -83,9 +87,13 @@ class DataPage(QWizardPage):
 
             plot_and_table_layout = QHBoxLayout()
             plot_and_table_layout.addWidget(self.table, alignment=Qt.AlignmentFlag.AlignCenter)
-            plot_and_table_layout.addWidget(self.graphWidget, alignment=Qt.AlignmentFlag.AlignCenter)
+            plot_and_table_layout.addWidget(
+                self.graphWidget, alignment=Qt.AlignmentFlag.AlignCenter
+            )
             self.graphWidget.clear()
-            powers = list(self.wizard().data.columns[1:].str.extract(r"([-+]?\d*\.?\d+)", expand=False))
+            powers = list(
+                self.wizard().data.columns[1:].str.extract(r"([-+]?\d*\.?\d+)", expand=False)
+            )
             for i in range(n := self.wizard().data.shape[1] - 1):
                 self.graphWidget.addLegend(offset=(1, -1))
                 self.graphWidget.plot(
@@ -147,7 +155,7 @@ class ConstantsGroup(QGroupBox):
 
         # For testing purposes:
         b0_entry.setText("9.4")
-        gamma_entry.setText("267.522")
+        gamma_entry.setText("42.58")
         tp_entry.setText("10")
 
     def fill_in_b1_list(self, parent):
@@ -157,6 +165,13 @@ class ConstantsGroup(QGroupBox):
             if df.columns[1:].str.contains("T").any():
                 b1_list = list(df.columns[1:].str.extract(r"([-+]?\d*\.?\d+)", expand=False))
                 self.b1_entry.setText(", ".join([f"{float(b1):.2f}" for b1 in b1_list]))
+            elif df.columns[1:].str.contains("Hz").any():
+                b1_list = list(df.columns[1:].str.extract(r"([-+]?\d*\.?\d+)", expand=False))
+                try:
+                    gamma = float(parent.field("gamma"))
+                    self.b1_entry.setText(", ".join([f"{float(b1)/gamma:.2f}" for b1 in b1_list]))
+                except ValueError:
+                    QMessageBox.warning(self, "Info", "Please insert gyromagnetic ratio.")
 
         else:
             QMessageBox.warning(self, "Warning", "Please select data excel sheet on previous page.")
@@ -423,7 +438,9 @@ class SolverGroup(QGroupBox):
         # Configure MCMC widget
         bayesian_mcmc_container = QWidget()
         bayesian_mcmc_layout = QFormLayout(bayesian_mcmc_container)
-        bayesian_mcmc_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+        bayesian_mcmc_layout.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint
+        )
 
         warmup_entry = QLineEdit("1000")
         samples_entry = QLineEdit("1000")
@@ -465,7 +482,9 @@ class SolverGroup(QGroupBox):
             parent.variablesGroup.R1b_vary.setCurrentText("Static")
             parent.variablesGroup.R1b_vary.removeItem(0)
             parent.variablesGroup.R1b_val.setText("0")
-            QMessageBox.information(self, "Info", "Using the Analytical solver disables R1b for fitting!")
+            QMessageBox.information(
+                self, "Info", "Using the Analytical solver disables R1b for fitting!"
+            )
         else:
             parent.variablesGroup.R1b_vary.clear()
             parent.variablesGroup.R1b_vary.addItems(["Vary", "Static"])
@@ -528,7 +547,9 @@ class ModelPage(QWizardPage):
             except ValueError:  # field probably empty. Choose average as init value
                 par_value = (min + max) / 2
 
-            self.wizard().model_parameters.add(name=name, value=par_value, vary=par_varies, min=par_min, max=par_max)
+            self.wizard().model_parameters.add(
+                name=name, value=par_value, vary=par_varies, min=par_min, max=par_max
+            )
 
 
 class Thread(QThread):
@@ -601,12 +622,26 @@ class ResultPage(QWizardPage):
                 num_warmup = int(n_warmup) if (n_warmup := self.field("num_warmup")) else None
                 num_samples = int(n_samples) if (n_samples := self.field("num_samples")) else None
                 num_chains = int(n_chains) if (n_chains := self.field("num_chains")) else None
-                args = (model_parameters, self.model_args, self.data, self.solver, num_warmup, num_samples, num_chains)
+                args = (
+                    model_parameters,
+                    self.model_args,
+                    self.data,
+                    self.solver,
+                    num_warmup,
+                    num_samples,
+                    num_chains,
+                )
             case 1:  # "Bayesian, ADVI"
                 fitting_method = bayesian_vi
-                optimizer_step_size = float(step_size) if (step_size := self.field("optimizer_stepsize")) else None
-                optimizer_num_steps = int(n_steps) if (n_steps := self.field("optimizer_num_steps")) else None
-                num_posterior_samples = int(n_samples) if (n_samples := self.field("num_posterior_samples")) else None
+                optimizer_step_size = (
+                    float(step_size) if (step_size := self.field("optimizer_stepsize")) else None
+                )
+                optimizer_num_steps = (
+                    int(n_steps) if (n_steps := self.field("optimizer_num_steps")) else None
+                )
+                num_posterior_samples = (
+                    int(n_samples) if (n_samples := self.field("num_posterior_samples")) else None
+                )
                 args = (
                     model_parameters,
                     self.model_args,
@@ -636,7 +671,11 @@ class ResultPage(QWizardPage):
                 mcmc = result["fit"]
                 self.idata = az.from_numpyro(mcmc)
                 self.fit_summary = az.summary(
-                    self.idata, kind="stats", round_to=4, var_names=["~sigma"], stat_funcs={"median": np.median}
+                    self.idata,
+                    kind="stats",
+                    round_to=4,
+                    var_names=["~sigma"],
+                    stat_funcs={"median": np.median},
                 )
                 self.summary.setText(self.print_results())
                 best_fit_pars = tuple(
@@ -650,7 +689,11 @@ class ResultPage(QWizardPage):
                 self.svi_losses = result["loss"]
                 self.idata = az.from_dict(posterior_samples)
                 self.fit_summary = az.summary(
-                    self.idata, kind="stats", round_to=4, var_names=["~sigma"], stat_funcs={"median": np.median}
+                    self.idata,
+                    kind="stats",
+                    round_to=4,
+                    var_names=["~sigma"],
+                    stat_funcs={"median": np.median},
                 )
                 self.summary.setText(self.print_results())
                 best_fit_pars = tuple(
@@ -669,11 +712,19 @@ class ResultPage(QWizardPage):
         self.fig = self.graphWidget.getFigure()
         self.fig.set_layout_engine("tight")
         ax = self.fig.add_subplot()
-        ax.plot(self.offsets, self.data.T, marker=".", lw=0, label=[f"B₁={power:.1f} μT" for power in self.powers])
+        ax.plot(
+            self.offsets,
+            self.data.T,
+            marker=".",
+            lw=0,
+            label=[f"B₁={power:.1f} μT" for power in self.powers],
+        )
         ax.set_prop_cycle(None)
         ax.plot(self.offsets, self.fit)
         ax.set_title(
-            "Nonlinear Least Squares Fit" if self.field("fitting_method") == 2 else "Bayesian Fit, Posterior Median"
+            "Nonlinear Least Squares Fit"
+            if self.field("fitting_method") == 2
+            else "Bayesian Fit, Posterior Median"
         )
         ax.set_xlabel("offset [ppm]")
         ax.set_ylabel("Z-value [a.u.]")
@@ -702,7 +753,7 @@ class ResultPage(QWizardPage):
                     spercent = f"({abs(par["sd"]/par["median"]):.2%})"
                 except ZeroDivisionError:
                     spercent = ""
-                sval = f"{sval} +/-{serr} {spercent}"
+                sval = f"{sval} +/- {serr} {spercent}"
                 add(f"    {nout} {sval}")
             else:
                 par = self.wizard().model_parameters[name]
@@ -716,7 +767,9 @@ class ResultPage(QWizardPage):
             return
         fitting_methods = ["Bayesian-MCMC", "Bayesian-ADVI", "Least-Squares"]
         solvers = ["Symbolic", "Analytical", "Numerical"]
-        saveDir = os.path.join(folderPath, fitting_methods[self.field("fitting_method")], solvers[self.field("solver")])
+        saveDir = os.path.join(
+            folderPath, fitting_methods[self.field("fitting_method")], solvers[self.field("solver")]
+        )
         os.makedirs(saveDir, exist_ok=True)
 
         self.fig.savefig(os.path.join(saveDir, "best_fit.pdf"), format="pdf")
@@ -744,15 +797,23 @@ class ResultPage(QWizardPage):
                     )
                     self.best_fit_pars_mode = np.asarray(
                         [
-                            az.plots.plot_utils.calculate_point_estimate("mode", posterior_samples[par])
+                            az.plots.plot_utils.calculate_point_estimate(
+                                "mode", posterior_samples[par]
+                            )
                             if self.wizard().model_parameters[par].vary
                             else self.wizard().model_parameters[par].value
                             for par in self.wizard().model_parameters.keys()
                         ]
                     )
-                    self.best_fit_spectra_mean = self.solver(self.best_fit_pars_mean, *self.model_args).T
-                    self.best_fit_spectra_median = self.solver(self.best_fit_pars_median, *self.model_args).T
-                    self.best_fit_spectra_mode = self.solver(self.best_fit_pars_mode, *self.model_args).T
+                    self.best_fit_spectra_mean = self.solver(
+                        self.best_fit_pars_mean, *self.model_args
+                    ).T
+                    self.best_fit_spectra_median = self.solver(
+                        self.best_fit_pars_median, *self.model_args
+                    ).T
+                    self.best_fit_spectra_mode = self.solver(
+                        self.best_fit_pars_mode, *self.model_args
+                    ).T
 
                     pd.DataFrame(
                         np.c_[self.offsets, self.best_fit_spectra_mean],
@@ -767,12 +828,18 @@ class ResultPage(QWizardPage):
                         columns=["ppm"] + [f"{power:.1f} μT" for power in self.powers],
                     ).round(3).to_excel(writer, sheet_name="mode", index=False)
 
-                    az.plot_pair(self.idata, var_names=["~sigma"], kind="kde", marginals=True, divergences=True)[
-                        0, 0
-                    ].get_figure().savefig(os.path.join(saveDir, "pair_plot.pdf"), format="pdf")
-                    az.plot_ess(self.idata, var_names=["~sigma"], relative=True)[0, 0].get_figure().savefig(
-                        os.path.join(saveDir, "ess_plot.pdf"), format="pdf"
+                    az.plot_pair(
+                        self.idata,
+                        var_names=["~sigma"],
+                        kind="kde",
+                        marginals=True,
+                        divergences=True,
+                    )[0, 0].get_figure().savefig(
+                        os.path.join(saveDir, "pair_plot.pdf"), format="pdf"
                     )
+                    az.plot_ess(self.idata, var_names=["~sigma"], relative=True)[
+                        0, 0
+                    ].get_figure().savefig(os.path.join(saveDir, "ess_plot.pdf"), format="pdf")
                     with open(os.path.join(saveDir, "fit_summary.txt"), "w") as file:
                         file.write("[Fixed Variables]\n")
                         for par in self.wizard().model_parameters.keys():
@@ -786,7 +853,9 @@ class ResultPage(QWizardPage):
                                 kind="stats",
                                 stat_funcs={
                                     "median": np.median,
-                                    "mode": lambda x: az.plots.plot_utils.calculate_point_estimate("mode", x),
+                                    "mode": lambda x: az.plots.plot_utils.calculate_point_estimate(
+                                        "mode", x
+                                    ),
                                 },
                             ).to_string()
                         )
@@ -817,15 +886,23 @@ class ResultPage(QWizardPage):
                     )
                     self.best_fit_pars_mode = np.asarray(
                         [
-                            az.plots.plot_utils.calculate_point_estimate("mode", posterior_samples[par])
+                            az.plots.plot_utils.calculate_point_estimate(
+                                "mode", posterior_samples[par]
+                            )
                             if self.wizard().model_parameters[par].vary
                             else self.wizard().model_parameters[par].value
                             for par in self.wizard().model_parameters.keys()
                         ]
                     )
-                    self.best_fit_spectra_mean = self.solver(self.best_fit_pars_mean, *self.model_args).T
-                    self.best_fit_spectra_median = self.solver(self.best_fit_pars_median, *self.model_args).T
-                    self.best_fit_spectra_mode = self.solver(self.best_fit_pars_mode, *self.model_args).T
+                    self.best_fit_spectra_mean = self.solver(
+                        self.best_fit_pars_mean, *self.model_args
+                    ).T
+                    self.best_fit_spectra_median = self.solver(
+                        self.best_fit_pars_median, *self.model_args
+                    ).T
+                    self.best_fit_spectra_mode = self.solver(
+                        self.best_fit_pars_mode, *self.model_args
+                    ).T
 
                     pd.DataFrame(
                         np.c_[self.offsets, self.best_fit_spectra_mean],
@@ -863,13 +940,16 @@ class ResultPage(QWizardPage):
                                 kind="stats",
                                 stat_funcs={
                                     "median": np.median,
-                                    "mode": lambda x: az.plots.plot_utils.calculate_point_estimate("mode", x),
+                                    "mode": lambda x: az.plots.plot_utils.calculate_point_estimate(
+                                        "mode", x
+                                    ),
                                 },
                             ).to_string()
                         )
                 case 2:  # NLS
                     df_fit = pd.DataFrame(
-                        np.c_[self.offsets, self.fit], columns=["ppm"] + [f"{power:.2g} μT" for power in self.powers]
+                        np.c_[self.offsets, self.fit],
+                        columns=["ppm"] + [f"{power:.2g} μT" for power in self.powers],
                     )
                     df_fit.round(3).to_excel(writer, sheet_name="nls", index=False)
 

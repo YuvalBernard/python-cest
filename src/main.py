@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
+import toml
 from PyQt6.QtCore import QSize, Qt, QThread, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
@@ -152,11 +153,6 @@ class ConstantsGroup(QGroupBox):
         button = QPushButton("Fill B₁ from table")
         button.clicked.connect(lambda: self.fill_in_b1_list(parent))
         layout.addWidget(button, 5, 0, 1, -1)
-
-        # For testing purposes:
-        b0_entry.setText("9.4")
-        gamma_entry.setText("42.58")
-        tp_entry.setText("10")
 
     def fill_in_b1_list(self, parent):
         if hasattr(parent.wizard(), "data"):
@@ -383,29 +379,6 @@ class VariablesGroup(QGroupBox):
             layout.addWidget(val, j, 5)
             layout.addWidget(desc, j, 6)
 
-        # For testing purposes:
-        R1a_vary.setCurrentText("Static")
-        R2a_vary.setCurrentText("Static")
-        dwa_vary.setCurrentText("Static")
-        R1a_val.setText("0.33")
-        R2a_val.setText("0.5")
-        dwa_val.setText("0")
-        R1b_min.setText("0.1")
-        R1b_max.setText("10")
-        R1b_init_val.setText("5")
-        R2b_min.setText("0.1")
-        R2b_max.setText("100")
-        R2b_init_val.setText("1")
-        kb_min.setText("10")
-        kb_max.setText("500")
-        kb_init_val.setText("150")
-        fb_min.setText("1e-5")
-        fb_max.setText("5e-3")
-        fb_init_val.setText("1e-3")
-        dwb_min.setText("3")
-        dwb_max.setText("4")
-        dwb_init_val.setText("3.5")
-
 
 class SolverGroup(QGroupBox):
     def __init__(self, parent: QWizardPage):
@@ -495,16 +468,97 @@ class ModelPage(QWizardPage):
         super().__init__(parent)
 
         self.setTitle("Configure Model Parameters")
-        layout = QVBoxLayout(self)
-        layout2 = QHBoxLayout()
-        layout2.addWidget(ConstantsGroup(self))
-        layout2.addWidget(SolverGroup(self))
-        layout.addLayout(layout2)
+
+        button = QPushButton("Load configuration file")
+        button.clicked.connect(self.load_configuration)
+
         self.variablesGroup = VariablesGroup(self)
+        self.constantsGroup = ConstantsGroup(self)
+        self.solverGroup = SolverGroup(self)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(button, alignment=Qt.AlignmentFlag.AlignLeft)
+        layout2 = QHBoxLayout()
+        layout2.addWidget(self.constantsGroup)
+        layout2.addWidget(self.solverGroup)
+        layout.addLayout(layout2)
         layout.addWidget(self.variablesGroup)
 
-        self.setCommitPage(True)
-        parent.button(QWizard.WizardButton.CommitButton).clicked.connect(self.makeModel)
+    def validatePage(self):
+        self.makeModel()
+        return super(ModelPage, self).validatePage()
+
+    def load_configuration(self):
+        filename, extension = QFileDialog.getOpenFileName(self)
+        if filename:
+            with open(filename, "r") as f:
+                config = toml.load(f)
+
+            self.setField("b0", config["Constants"]["B0"])
+            self.setField("gamma", config["Constants"]["gamma"])
+            self.setField("tp", config["Constants"]["tp"])
+
+            for par, init, vary, min, max, val in zip(
+                ["R1a", "R2a", "dwa", "R1b", "R2b", "kb", "fb", "dwb"],
+                [
+                    "R1a_init_val",
+                    "R2a_init_val",
+                    "dwa_init_val",
+                    "R1b_init_val",
+                    "R2b_init_val",
+                    "kb_init_val",
+                    "fb_init_val",
+                    "dwb_init_val",
+                ],
+                [
+                    "R1a_vary",
+                    "R2a_vary",
+                    "dwa_vary",
+                    "R1b_vary",
+                    "R2b_vary",
+                    "kb_vary",
+                    "fb_vary",
+                    "dwb_vary",
+                ],
+                [
+                    "R1a_min",
+                    "R2a_min",
+                    "dwa_min",
+                    "R1b_min",
+                    "R2b_min",
+                    "kb_min",
+                    "fb_min",
+                    "dwb_min",
+                ],
+                [
+                    "R1a_max",
+                    "R2a_max",
+                    "dwa_max",
+                    "R1b_max",
+                    "R2b_max",
+                    "kb_max",
+                    "fb_max",
+                    "dwb_max",
+                ],
+                [
+                    "R1a_val",
+                    "R2a_val",
+                    "dwa_val",
+                    "R1b_val",
+                    "R2b_val",
+                    "kb_val",
+                    "fb_val",
+                    "dwb_val",
+                ],
+            ):
+                if config["Variables"][par]["vary"]:
+                    self.setField(vary, 0)
+                    self.setField(min, config["Variables"][par]["min"])
+                    self.setField(max, config["Variables"][par]["max"])
+                    self.setField(init, config["Variables"][par]["init"])
+                else:
+                    self.setField(vary, 1)
+                    self.setField(val, config["Variables"][par]["value"])
 
     def makeModel(self):
         self.wizard().model_parameters = lmfit.Parameters()
@@ -575,7 +629,7 @@ class ResultPage(QWizardPage):
         self.setTitle("Performing Fitting... Please Wait for the Process to Finish")
         page_layout = QVBoxLayout(self)
         page_layout.addWidget(self.spinner)
-        parent.button(QWizard.WizardButton.CommitButton).clicked.connect(self.perform_fit)
+        # parent.button(QWizard.WizardButton.CommitButton).clicked.connect(self.perform_fit)
 
         sub_page_layout = QHBoxLayout()
 
@@ -596,6 +650,10 @@ class ResultPage(QWizardPage):
         page_layout.addWidget(self.button)
         self.button.clicked.connect(self.save_results)
         self.button.setVisible(False)
+
+    def initializePage(self):
+        self.perform_fit()
+        return super(ResultPage, self).initializePage()
 
     def perform_fit(self):
         df = self.wizard().data
@@ -963,9 +1021,14 @@ class WizardApp(QWizard):
 
         self.setWindowTitle("Bloch-McConnellizer")
         self.setMinimumSize(QSize(940, 640))
-        self.addPage(DataPage())
-        self.addPage(ModelPage(self))
-        self.addPage(ResultPage(self))
+
+        self.dataPage = DataPage()
+        self.modelPage = ModelPage(self)
+        self.resultPage = ResultPage(self)
+
+        self.addPage(self.dataPage)
+        self.addPage(self.modelPage)
+        self.addPage(self.resultPage)
 
 
 def makeBold(widget: QWidget):

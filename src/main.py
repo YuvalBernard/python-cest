@@ -92,16 +92,14 @@ class DataPage(QWizardPage):
                 self.graphWidget, alignment=Qt.AlignmentFlag.AlignCenter
             )
             self.graphWidget.clear()
-            powers = list(
-                self.wizard().data.columns[1:].str.extract(r"([-+]?\d*\.?\d+)", expand=False)
-            )
+            powers = self.wizard().data.columns[1:]
             for i in range(n := self.wizard().data.shape[1] - 1):
                 self.graphWidget.addLegend(offset=(1, -1))
                 self.graphWidget.plot(
                     self.wizard().data.iloc[:, 0],
                     self.wizard().data.iloc[:, i + 1],
                     pen=(i, n),
-                    name=f"B₁ = {float(powers[i]):.2g} µT",
+                    name=f"B₁ = {powers[i]}",
                 )
 
             self.layout.addLayout(plot_and_table_layout)
@@ -452,9 +450,9 @@ class SolverGroup(QGroupBox):
 
     def validateSolver(self, parent):
         if parent.field("solver") == 1:  # Analytical
-            parent.variablesGroup.R1b_vary.setCurrentText("Static")
-            parent.variablesGroup.R1b_vary.removeItem(0)
-            parent.variablesGroup.R1b_val.setText("0")
+            # parent.variablesGroup.R1b_vary.setCurrentText("Static")
+            parent.setField("R1b_vary", 1)
+            parent.setField("R1b_val", 1)
             QMessageBox.information(
                 self, "Info", "Using the Analytical solver disables R1b for fitting!"
             )

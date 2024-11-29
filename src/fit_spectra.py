@@ -32,6 +32,7 @@ import jax
 import jax.numpy as jnp
 import jax.random
 import lmfit
+import numdifftools
 import numpy as np
 import numpyro
 import numpyro.distributions as dist
@@ -77,11 +78,11 @@ def least_squares(
     fit = lmfit.minimize(
         fcn=objective,
         params=model_parameters,
-        method="shgo",
+        method="least_squares",
         args=(model_args, data, method_jitted),
-        minimizer_kwargs={"method": "l-bfgs-b"},
-        sampling_method="sobol",
-        n=1024
+        # minimizer_kwargs={"method": "l-bfgs-b"},
+        # sampling_method="sobol",
+        # n=1024,
     )
     return {"fit": fit.params}
 
@@ -140,9 +141,6 @@ def bayesian_mcmc(
     mcmc = numpyro.infer.MCMC(
         numpyro.infer.NUTS(
             probabilistic_model,
-            init_strategy=numpyro.infer.init_to_feasible,
-            target_accept_prob=0.85,
-            forward_mode_differentiation=True,
         ),
         num_warmup=num_warmup,
         num_samples=num_samples,

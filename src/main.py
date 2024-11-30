@@ -518,6 +518,7 @@ class SolverGroup(QGroupBox):
             QMessageBox.information(self, "Info", "Using the Analytical solver disables R1b for fitting!")
         else:
             self.parent.variablesGroup.R1b_vary.setEnabled(True)
+            self.parent.setField("R1b_vary", "Vary")
 
 
 class ModelPage(QWizardPage):
@@ -903,11 +904,18 @@ class ResultPage(QWizardPage):
         folderPath = QFileDialog.getExistingDirectory(self, "Select Folder")
         if not folderPath:
             return
-        fitting_methods = ["Bayesian-MCMC", "Bayesian-ADVI", "Least-Squares"]
-        solvers = ["Symbolic", "Analytical", "Numerical"]
+        # fitting_methods = ["Bayesian-MCMC", "Bayesian-ADVI", "Least-Squares"]
+        # solvers = ["Symbolic", "Analytical", "Numerical"]
         # saveDir = os.path.join(folderPath, fitting_methods[self.field("fitting_method")], solvers[self.field("solver")])
         saveDir = os.path.join(folderPath, Path(self.wizard().filename).stem)
-        os.makedirs(saveDir, exist_ok=True)
+        try:
+            os.makedirs(saveDir, exist_ok=False)
+        except FileExistsError:
+            reply = QMessageBox.question(self, "Error", "Directory already exists. Overwrite?")
+            if reply == QMessageBox.StandardButton.Yes:
+                os.makedirs(saveDir, exist_ok=True)
+            else:
+                return
 
         self.fig.savefig(os.path.join(saveDir, "best_fit.pdf"), format="pdf")
         with pd.ExcelWriter(os.path.join(saveDir, "best_fit.xlsx"), mode="w") as writer:
@@ -963,8 +971,8 @@ class ResultPage(QWizardPage):
                         kind="kde",
                         marginals=True,
                         divergences=True,
-                    )[0, 0].get_figure().savefig(os.path.join(saveDir, "pair_plot.pdf"), format="pdf")
-                    az.plot_ess(self.idata, var_names=["~sigma"], relative=True)[0, 0].get_figure().savefig(
+                    ).flatten()[0].get_figure().savefig(os.path.join(saveDir, "pair_plot.pdf"), format="pdf")
+                    az.plot_ess(self.idata, var_names=["~sigma"], relative=True).flatten()[0].get_figure().savefig(
                         os.path.join(saveDir, "ess_plot.pdf"), format="pdf"
                     )
                     with open(os.path.join(saveDir, "fit_summary.txt"), "w") as file:

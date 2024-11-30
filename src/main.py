@@ -66,10 +66,15 @@ class DataPage(QWizardPage):
         open_button.clicked.connect(self.get_filename)
         self.label = QLabel("None selected.")
 
+        self.normalize_button = QPushButton("Normalize Data")
+        self.normalize_button.clicked.connect(self.normalizeData)
+
         file_select_layout = QHBoxLayout()
         file_select_layout.addWidget(open_button)
         file_select_layout.addWidget(self.label)
         self.layout.addLayout(file_select_layout)
+        self.layout.addWidget(self.normalize_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.normalize_button.setVisible(False)
 
         self.table = pg.TableWidget(editable=False, sortable=False)
         self.table.setAlternatingRowColors(True)
@@ -80,6 +85,46 @@ class DataPage(QWizardPage):
         self.graphWidget.setLabel("left", "Z-value [a.u.]")
         self.graphWidget.setLabel("bottom", "offset [ppm]")
 
+    def normalizeData(self):
+        self.wizard().data = pd.read_excel(self.filename)
+        selected_option, ok = QInputDialog.getItem(
+            self,
+            "Normalize Data",
+            "Select method to normalize data",
+            ["By First Value", "By Maximal Value"],
+            current=0,
+            editable=False,
+        )
+        if ok:
+            if selected_option == "By First Value":
+                for col in self.wizard().data.columns[1:]:
+                    self.wizard().data[col] /= self.wizard().data[col][0]
+            else:
+                for col in self.wizard().data.columns[1:]:
+                    self.wizard().data[col] /= self.wizard().data[col].max()
+            self.updateUi()
+        else:
+            return
+
+    def updateUi(self):
+        self.table.setData(self.wizard().data.T.to_dict())
+
+        plot_and_table_layout = QHBoxLayout()
+        plot_and_table_layout.addWidget(self.table, alignment=Qt.AlignmentFlag.AlignCenter)
+        plot_and_table_layout.addWidget(self.graphWidget, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.graphWidget.clear()
+        powers = self.wizard().data.columns[1:]
+        for i in range(n := self.wizard().data.shape[1] - 1):
+            self.graphWidget.addLegend(offset=(1, -1))
+            self.graphWidget.plot(
+                self.wizard().data.iloc[:, 0],
+                self.wizard().data.iloc[:, i + 1],
+                pen=(i, n),
+                name=f"B₁ = {powers[i]}",
+            )
+
+        self.layout.addLayout(plot_and_table_layout)
+
     def get_filename(self):
         self.filename, extension = QFileDialog.getOpenFileName(self)
         self.label.setText(self.filename)
@@ -89,43 +134,12 @@ class DataPage(QWizardPage):
                 if (
                     self.wizard().data.iloc[:, 1:].max(axis=None) > 2
                 ):  # arbitrary value that is impossible if data is normalized
-                    selected_option, ok = QInputDialog.getItem(
-                        self,
-                        "Normalize Data",
-                        "Select method to normalize data",
-                        ["By First Value", "By Maximal Value"],
-                        current=0,
-                        editable=False,
-                    )
-                    if ok and selected_option:
-                        if selected_option == "By First Value":
-                            for col in self.wizard().data.columns[1:]:
-                                self.wizard().data[col] /= self.wizard().data[col][0]
-                        else:
-                            for col in self.wizard().data.columns[1:]:
-                                self.wizard().data[col] /= self.wizard().data[col].max()
-                    else:
-                        QMessageBox.warning(self, "Warning", "Please normalize the data.")
+                    QMessageBox.warning(self, "Warning", "Please normalize the data.")
+                    self.normalize_button.setVisible(True)
             except ValueError:
                 QMessageBox.warning(self, "Error", "The program only accepts data in xlsx format.")
                 return
-            self.table.setData(self.wizard().data.T.to_dict())
-
-            plot_and_table_layout = QHBoxLayout()
-            plot_and_table_layout.addWidget(self.table, alignment=Qt.AlignmentFlag.AlignCenter)
-            plot_and_table_layout.addWidget(self.graphWidget, alignment=Qt.AlignmentFlag.AlignCenter)
-            self.graphWidget.clear()
-            powers = self.wizard().data.columns[1:]
-            for i in range(n := self.wizard().data.shape[1] - 1):
-                self.graphWidget.addLegend(offset=(1, -1))
-                self.graphWidget.plot(
-                    self.wizard().data.iloc[:, 0],
-                    self.wizard().data.iloc[:, i + 1],
-                    pen=(i, n),
-                    name=f"B₁ = {powers[i]}",
-                )
-
-            self.layout.addLayout(plot_and_table_layout)
+            self.updateUi()
 
 
 class ConstantsGroup(QGroupBox):

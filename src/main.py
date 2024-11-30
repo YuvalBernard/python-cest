@@ -431,12 +431,12 @@ class SolverGroup(QGroupBox):
 
         solver_list = QComboBox()
         solver_list.addItems(["Symbolic", "Analytical", "Numerical"])
-        self.parent.registerField("solver", solver_list)
+        self.parent.registerField("solver", solver_list, "currentText", QComboBox.currentTextChanged)
         solver_list.currentIndexChanged.connect(self.validateSolver)
 
         fitter_list = QComboBox()
         fitter_list.addItems(["Bayesian, MCMC", "Bayesian, ADVI", "Nonlinear Least Squares"])
-        self.parent.registerField("fitting_method", fitter_list)
+        self.parent.registerField("fitting_method", fitter_list, "currentText", QComboBox.currentTextChanged)
 
         selection_layout = QFormLayout()
         selection_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
@@ -511,7 +511,7 @@ class SolverGroup(QGroupBox):
         config_page.addWidget(least_squares_container)
 
     def validateSolver(self):
-        if self.parent.field("solver") == 1:  # Analytical
+        if self.parent.field("solver") == "Analytical":  # Analytical
             self.parent.setField("R1b_val", 1)
             self.parent.setField("R1b_vary", "Static")
             self.parent.variablesGroup.R1b_vary.setEnabled(False)
@@ -741,15 +741,15 @@ class ResultPage(QWizardPage):
         self.model_args = (self.offsets, self.powers, b0, gamma, tp)
 
         match self.field("solver"):
-            case 0:  # "Symbolic"
+            case "Symbolic":  # "Symbolic"
                 self.solver = batch_gen_spectrum_symbolic
-            case 1:  # "Analytical":
+            case "Analytical":  # "Analytical":
                 self.solver = batch_gen_spectrum_analytical
-            case 2:  # "Numerical"
+            case "Numerical":  # "Numerical"
                 self.solver = batch_gen_spectrum_numerical
 
         match self.field("fitting_method"):
-            case 0:  # "Bayesian, MCMC"
+            case "Bayesian, MCMC":  # "Bayesian, MCMC"
                 fitting_method = bayesian_mcmc
                 num_warmup = int(n_warmup) if (n_warmup := self.field("num_warmup")) else None
                 num_samples = int(n_samples) if (n_samples := self.field("num_samples")) else None
@@ -763,7 +763,7 @@ class ResultPage(QWizardPage):
                     num_samples,
                     num_chains,
                 )
-            case 1:  # "Bayesian, ADVI"
+            case "Bayesian, ADVI":  # "Bayesian, ADVI"
                 fitting_method = bayesian_vi
                 optimizer_step_size = float(step_size) if (step_size := self.field("optimizer_stepsize")) else None
                 optimizer_num_steps = int(n_steps) if (n_steps := self.field("optimizer_num_steps")) else None
@@ -777,7 +777,7 @@ class ResultPage(QWizardPage):
                     optimizer_num_steps,
                     num_posterior_samples,
                 )
-            case 2:  # "Nonlinear Least Squares"
+            case "Nonlinear Least Squares":  # "Nonlinear Least Squares"
                 fitting_method = least_squares
                 args = (model_parameters, self.model_args, self.data, self.solver, self.field("NLS_algorithm"))
 
@@ -794,7 +794,7 @@ class ResultPage(QWizardPage):
         self.setTitle("Fit Summary")
 
         match self.field("fitting_method"):
-            case 0:  # MCMC
+            case "Bayesian, MCMC":  # MCMC
                 mcmc = result["fit"]
                 self.idata = az.from_numpyro(mcmc)
 
@@ -825,7 +825,7 @@ class ResultPage(QWizardPage):
                 ):
                     QMessageBox.warning(self, "Warning", "Effective sample size too low.\nIncrease number of samples.")
 
-            case 1:  # ADVI
+            case "Bayesian, ADVI":  # ADVI
                 posterior_samples = result["fit"]
                 self.svi_losses = result["loss"]
                 self.idata = az.from_dict(posterior_samples)
@@ -843,7 +843,7 @@ class ResultPage(QWizardPage):
                     else self.wizard().model_parameters[par].value
                     for par in self.wizard().model_parameters.keys()
                 )
-            case 2:  # NLS
+            case "Nonlinear Least Squares":  # NLS
                 fit_params = result["fit"]
                 self.summary.setText(lmfit.fit_report(fit_params, show_correl=False))
                 best_fit_pars = tuple(fit_params.valuesdict().values())
@@ -863,7 +863,9 @@ class ResultPage(QWizardPage):
         ax.set_prop_cycle(None)
         ax.plot(self.offsets, self.fit)
         ax.set_title(
-            "Nonlinear Least Squares Fit" if self.field("fitting_method") == 2 else "Bayesian Fit, Posterior Median"
+            "Nonlinear Least Squares Fit"
+            if self.field("fitting_method") == "Nonlinear Least Squares"
+            else "Bayesian Fit, Posterior Median"
         )
         ax.set_xlabel("offset [ppm]")
         ax.set_ylabel("Z-value [a.u.]")
@@ -922,7 +924,7 @@ class ResultPage(QWizardPage):
             self.wizard().data.to_excel(writer, sheet_name="data", index=False)
 
             match self.field("fitting_method"):
-                case 0:  # MCMC
+                case "Bayesian, MCMC":  # MCMC
                     posterior_samples = self.fit_result["fit"].get_samples()
                     self.best_fit_pars_mean = np.asarray(
                         [
@@ -976,7 +978,9 @@ class ResultPage(QWizardPage):
                         os.path.join(saveDir, "ess_plot.pdf"), format="pdf"
                     )
                     with open(os.path.join(saveDir, "fit_summary.txt"), "w") as file:
-                        file.write("[Fixed Variables]\n")
+                        file.write(f"Fitting method: {self.field("fitting_method")}\n")
+                        file.write(f"Solver: {self.field("solver")}\n")
+                        file.write("\n[Fixed Variables]\n")
                         for par in self.wizard().model_parameters.keys():
                             if not self.wizard().model_parameters[par].vary:
                                 file.write(f"{par}\t{self.wizard().model_parameters[par].value}\n")
@@ -999,7 +1003,7 @@ class ResultPage(QWizardPage):
                             round_to=4,
                         )
                         file.write(fit_diagnostics.to_string())
-                case 1:  # ADVI
+                case "Bayesian, ADVI":  # ADVI
                     posterior_samples = self.fit_result["fit"]
                     self.best_fit_pars_mean = np.asarray(
                         [
@@ -1053,7 +1057,9 @@ class ResultPage(QWizardPage):
                     fig.savefig(os.path.join(saveDir, "svi_loss.pdf"), format="pdf")
 
                     with open(os.path.join(saveDir, "fit_summary.txt"), "w") as file:
-                        file.write("[Fixed Variables]\n")
+                        file.write(f"Fitting method: {self.field("fitting_method")}\n")
+                        file.write(f"Solver: {self.field("solver")}\n")
+                        file.write("\n[Fixed Variables]\n")
                         for par in self.wizard().model_parameters.keys():
                             if not self.wizard().model_parameters[par].vary:
                                 file.write(f"{par}\t{self.wizard().model_parameters[par].value}\n")
@@ -1069,7 +1075,7 @@ class ResultPage(QWizardPage):
                                 },
                             ).to_string()
                         )
-                case 2:  # NLS
+                case "Nonlinear Least Squares":  # NLS
                     df_fit = pd.DataFrame(
                         np.c_[self.offsets, self.fit],
                         columns=["ppm"] + [f"{power:.2g} μT" for power in self.powers],
@@ -1077,7 +1083,10 @@ class ResultPage(QWizardPage):
                     df_fit.round(3).to_excel(writer, sheet_name="nls", index=False)
 
                     with open(os.path.join(saveDir, "fit_summary.txt"), "w") as file:
+                        file.write(f"Fitting method: {self.field("fitting_method")}\n")
+                        file.write(f"Solver: {self.field("solver")}\n")
                         file.write(lmfit.fit_report(self.fit_result["fit"], show_correl=False))
+        QMessageBox.information(self, "Info", "Results saved successfully!")
 
 
 class WizardApp(QWizard):

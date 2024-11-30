@@ -1,6 +1,10 @@
-import toml
+# %%
 
-with open("src/example_config.toml", "r") as f:
-    config = toml.load(f)
+import pandas as pd
 
-print(config)
+df = pd.read_excel("/home/yuval/Documents/Weizmann/python-cest/lp30_normalized.xlsx")
+
+
+for col in df.columns[1:]:
+    df[col] /= df[col].max()
+df

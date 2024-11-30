@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -85,6 +86,26 @@ class DataPage(QWizardPage):
         if self.filename:
             try:
                 self.wizard().data = pd.read_excel(self.filename)
+                if (
+                    self.wizard().data.iloc[:, 1:].max(axis=None) > 2
+                ):  # arbitrary value that is impossible if data is normalized
+                    selected_option, ok = QInputDialog.getItem(
+                        self,
+                        "Normalize Data",
+                        "Select method to normalize data",
+                        ["By First Value", "By Maximal Value"],
+                        current=0,
+                        editable=False,
+                    )
+                    if ok and selected_option:
+                        if selected_option == "By First Value":
+                            for col in self.wizard().data.columns[1:]:
+                                self.wizard().data[col] /= self.wizard().data[col][0]
+                        else:
+                            for col in self.wizard().data.columns[1:]:
+                                self.wizard().data[col] /= self.wizard().data[col].max()
+                    else:
+                        QMessageBox.warning(self, "Warning", "Please normalize the data.")
             except ValueError:
                 QMessageBox.warning(self, "Error", "The program only accepts data in xlsx format.")
                 return

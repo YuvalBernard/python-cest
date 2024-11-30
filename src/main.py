@@ -4,6 +4,7 @@ Module that defines the app structure
 
 import os
 import sys
+from pathlib import Path
 
 import arviz as az
 import lmfit
@@ -86,7 +87,7 @@ class DataPage(QWizardPage):
         self.graphWidget.setLabel("bottom", "offset [ppm]")
 
     def normalizeData(self):
-        self.wizard().data = pd.read_excel(self.filename)
+        self.wizard().data = pd.read_excel(self.wizard().filename)
         selected_option, ok = QInputDialog.getItem(
             self,
             "Normalize Data",
@@ -126,11 +127,11 @@ class DataPage(QWizardPage):
         self.layout.addLayout(plot_and_table_layout)
 
     def get_filename(self):
-        self.filename, extension = QFileDialog.getOpenFileName(self)
-        self.label.setText(self.filename)
-        if self.filename:
+        self.wizard().filename, extension = QFileDialog.getOpenFileName(self)
+        self.label.setText(self.wizard().filename)
+        if self.wizard().filename:
             try:
-                self.wizard().data = pd.read_excel(self.filename)
+                self.wizard().data = pd.read_excel(self.wizard().filename)
                 if (
                     self.wizard().data.iloc[:, 1:].max(axis=None) > 2
                 ):  # arbitrary value that is impossible if data is normalized
@@ -815,7 +816,8 @@ class ResultPage(QWizardPage):
                 diagnostics = az.summary(self.idata, kind="diagnostics", round_to="none")
                 if diagnostics["r_hat"].apply(lambda rhat: rhat > 1.01).any():
                     QMessageBox.warning(self, "Warning", "MCMC chains have not converged.\nReconsider model validity")
-                num_chains = self.field("num_chains")
+                num_chains = int(self.field("num_chains"))
+                num_samples = int(self.field("num_samples"))
                 if (
                     diagnostics["ess_tail"].apply(lambda ess: ess / num_samples < 1 / num_chains).any()
                     or diagnostics["ess_bulk"].apply(lambda ess: ess / num_samples < 1 / num_chains).any()
@@ -903,7 +905,8 @@ class ResultPage(QWizardPage):
             return
         fitting_methods = ["Bayesian-MCMC", "Bayesian-ADVI", "Least-Squares"]
         solvers = ["Symbolic", "Analytical", "Numerical"]
-        saveDir = os.path.join(folderPath, fitting_methods[self.field("fitting_method")], solvers[self.field("solver")])
+        # saveDir = os.path.join(folderPath, fitting_methods[self.field("fitting_method")], solvers[self.field("solver")])
+        saveDir = os.path.join(folderPath, Path(self.wizard().filename).stem)
         os.makedirs(saveDir, exist_ok=True)
 
         self.fig.savefig(os.path.join(saveDir, "best_fit.pdf"), format="pdf")

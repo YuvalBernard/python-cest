@@ -64,9 +64,7 @@ def least_squares(
         batch_gen_spectrum_symbolic,
         batch_gen_spectrum_analytical,
     ]:
-        raise NameError(
-            "Please insert a valid method of solving Bloch-McConnell equations from the list."
-        )
+        raise NameError("Please insert a valid method of solving Bloch-McConnell equations from the list.")
     method_jitted = jax.jit(method)
 
     def objective(model_parameters, args, data, method) -> jax.Array:
@@ -75,9 +73,7 @@ def least_squares(
         resid = data - method(fit_pars, offsets, powers, B0, gamma, tp)
         return resid.flatten()
 
-    fitter = lmfit.Minimizer(
-        userfcn=objective, params=model_parameters, fcn_args=(model_args, data, method_jitted)
-    )
+    fitter = lmfit.Minimizer(userfcn=objective, params=model_parameters, fcn_args=(model_args, data, method_jitted))
     match algorithm:
         case "Levenberg-Marquardt":
             fit = fitter.leastsq()
@@ -116,9 +112,7 @@ def bayesian_mcmc(
     for par in list(model_parameters.keys()):
         if model_parameters[par].vary:
             if par in ["dwa", "dwb"]:
-                model_parameters[par].prior = dist.Uniform(
-                    model_parameters[par].min, model_parameters[par].max
-                )
+                model_parameters[par].prior = dist.Uniform(model_parameters[par].min, model_parameters[par].max)
             elif par in ["R1a", "R2a", "R1b", "R2b", "kb", "fb"]:
                 model_parameters[par].prior = dist.TruncatedNormal(
                     (model_parameters[par].min + model_parameters[par].max) / 2,
@@ -150,7 +144,7 @@ def bayesian_mcmc(
         num_samples=num_samples,
         num_chains=num_chains,
         chain_method="sequential",
-        progress_bar=False,
+        progress_bar=True,
     )
     mcmc.run(jax.random.key(1), model_parameters, model_args, data, method)
     return {"fit": mcmc}
@@ -180,9 +174,7 @@ def bayesian_vi(
     for par in list(model_parameters.keys()):
         if model_parameters[par].vary:
             if par in ["dwa", "dwb"]:
-                model_parameters[par].prior = dist.Uniform(
-                    model_parameters[par].min, model_parameters[par].max
-                )
+                model_parameters[par].prior = dist.Uniform(model_parameters[par].min, model_parameters[par].max)
             elif par in ["R1a", "R2a", "R1b", "R2b", "kb", "fb"]:
                 model_parameters[par].prior = dist.TruncatedNormal(
                     (model_parameters[par].min + model_parameters[par].max) / 2,
@@ -209,11 +201,7 @@ def bayesian_vi(
     guide = numpyro.infer.autoguide.AutoMultivariateNormal(probabilistic_model)
     optimizer = numpyro.optim.RMSProp(step_size=optimizer_step_size)
     svi = numpyro.infer.SVI(probabilistic_model, guide, optimizer, loss=numpyro.infer.Trace_ELBO())
-    svi_result = svi.run(
-        jax.random.key(1), num_steps, model_parameters, model_args, data, method, progress_bar=False
-    )
+    svi_result = svi.run(jax.random.key(1), num_steps, model_parameters, model_args, data, method, progress_bar=False)
     # Get posterior samples
-    posterior_samples = guide.sample_posterior(
-        jax.random.key(2), svi_result.params, sample_shape=(num_samples,)
-    )
+    posterior_samples = guide.sample_posterior(jax.random.key(2), svi_result.params, sample_shape=(num_samples,))
     return {"fit": posterior_samples, "loss": svi_result.losses}

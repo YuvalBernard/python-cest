@@ -1,12 +1,11 @@
 # %%
-import numpy as np
-from scipy.interpolate import PchipInterpolator
-from scipy.signal import find_peaks
 from functools import partial
 
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
+import numpy as np
 from jax.scipy.linalg import expm
+from scipy.interpolate import PchipInterpolator
+from scipy.signal import find_peaks, savgol_filter
 
 
 @partial(jnp.vectorize, excluded=[0, 1, 3, 4, 5], signature="()->(k)")  # powers
@@ -30,91 +29,64 @@ def batch_gen_spectrum_numerical(model_parameters, offset, power, B0, gamma, tp)
             [0, 0, 0, 0, 0, 0, 0],
         ]
     )
-    Z = jnp.matmul(expm(A * tp, max_squarings=18), M0)[2]
+    Z = jnp.matmul(expm(A * tp, max_squarings=24), M0)[2]
     return Z
 
-# %% simulate data
-offsets = np.arange(-6, 6, 0.15, dtype=float)
-powers = 1.5
-B0 = 9.4
-gamma = 267.522
-tp = 10.0
-args = (offsets, powers, B0, gamma, tp)
-#                    R1b   R2b  dwa  R1b  R2b   k      f     dwb
-fit_pars = np.array([0.33, 0.5, 0.0, 1.0, 30.0, 200.0, 4e-4, 3.5])
-Z = batch_gen_spectrum_numerical(fit_pars, offsets, powers, B0, gamma, tp)
-rng = np.random.default_rng()
-sigma = 0.01
-data = rng.normal(Z, sigma)
-
-peaks, _ = find_peaks(-data, prominence=0.1)
-plt.plot(offsets, data)
-plt.plot(offsets[peaks], data[peaks], 'r*')
-
-
-
-
-
-# %%
-#
 
 def Z_to_MTR_REX(x_zspec, zspec):
-    # Locate peaks
+    def single_Z_to_MTR_REX(x_zspec, zspec):
+        if x_zspec[0] >= x_zspec[1] and x_zspec[-2] >= x_zspec[-1]:  # array is decreasing
+            x_zspec = np.flip(x_zspec)
+            zspec = np.flip(zspec)
 
-def arex_ps(x_zspec, zspec):
-    """
-    Calculates AREX of z-spectra.
+        def locate_peaks(data, prominence: float):
+            idx, _ = find_peaks(-data, prominence=prominence)
+            if len(idx) == 2:
+                return prominence
+            elif len(idx) > 2:
+                prominence *= 2
+                return locate_peaks(data, prominence)
+            else:
+                prominence /= 1.5
+                return locate_peaks(data, prominence)
 
-    Parameters:
-    x_zspec (numpy array): x values of the z-spectrum.
-    Z (numpy array): 1D, 2D, 3D or 4D z-spectrum or zspec stack.
-    R1A (numpy array, optional): R1A-value, 2D-matrix or 3D-matrix. Defaults to 1.
+        filtered_zspec = savgol_filter(zspec, 15, 2)
+        prominence = locate_peaks(filtered_zspec, prominence=0.1)
+        idx, _ = find_peaks(-filtered_zspec, prominence=prominence)
 
-    Returns:
-    x_arex (numpy array): new x vector.
-    AREX (numpy array): AREX vector or 4D stack.
-    """
+        ds_idx = idx[0] if zspec[idx[0]] < zspec[idx[1]] else idx[1]
+        cest_idx = idx[0] if zspec[idx[0]] > zspec[idx[1]] else idx[1]
 
-    # Create new x vector
-    int1 = x_zspec[1:]
-    int2 = x_zspec[:-1]
-    step = np.abs(np.min(int1 - int2))
-    offset = np.max([np.abs(np.min(x_zspec)), np.abs(np.max(x_zspec))])
-    x_zspec_int = np.arange(-offset, offset, step)
-    int3 = np.arange(len(x_zspec_int) // 2, 0, -1)
-    int4 = np.arange(len(x_zspec_int) // 2 + 1, len(x_zspec_int) + 1)
-    x_arex = np.arange(0, offset + step, step)
+        QUOTIENT_TO_SKIP = 0.15
+        if ds_idx < cest_idx:  # peak is at positive frequency
+            N = len(x_zspec[ds_idx:])
+            x_lab = np.linspace(x_zspec[ds_idx], x_zspec[-1], N)
+            x_ref = np.sort(-x_lab)
+            z_lab = PchipInterpolator(x_zspec, zspec)(x_lab)
+            z_ref = np.flip(PchipInterpolator(x_zspec, zspec)(x_ref))
+            MTR_REX = (1 / z_lab - 1 / z_ref)[int(len(x_lab) * QUOTIENT_TO_SKIP) :]
+            x_lab = x_lab[int(len(x_lab) * QUOTIENT_TO_SKIP) :]
+        else:  # peak is at negative frequency
+            N = len(x_zspec[:ds_idx])
+            x_lab = np.linspace(x_zspec[0], x_zspec[ds_idx], N)
+            x_ref = np.sort(-x_lab)
+            z_lab = np.flip(PchipInterpolator(x_zspec, zspec)(x_lab))
+            z_ref = PchipInterpolator(x_zspec, zspec)(x_ref)
 
-    # Initialize AREX array
-    AREX = np.zeros(len(int4) + 1)
-    # Interpolate zspec data
-    y_zspec_int = PchipInterpolator(x_zspec, zspec)(x_zspec_int)
-    # Calculate AREX-vector
-    AREX[0] = 0
-    AREX[1:] = 1 / y_zspec_int[int4] - 1 / y_zspec_int[int3]
+            MTR_REX = (1 / z_lab - 1 / z_ref)[int(len(x_lab) * QUOTIENT_TO_SKIP) :]
+            x_lab = x_lab[int(len(x_lab) * QUOTIENT_TO_SKIP) :]
 
-    return x_arex, AREX
+        return x_lab, MTR_REX
 
+    if not zspec.size:
+        raise RuntimeError("Data matrix is not valid!")
+        return
 
-
-
-# %%
-x_zspec = np.arange(-6, 6, 0.1, dtype=float)
-z_spec = batch_gen_spectrum_numerical(fit_pars, x_zspec, powers, B0, gamma, tp)
-if (x_zspec[0] >= x_zspec[1] and x_zspec[-2] >= x_zspec[-1]): # array is decreasing
-    x_zspec = np.flip(x_zspec)
-    z_spec = np.flip(z_spec)
-
-int1 = x_zspec[1:]
-int2 = x_zspec[:-1]
-step = np.abs(np.min(int1 - int2))
-offset = np.max([np.abs(np.min(x_zspec)), np.abs(np.max(x_zspec))])
-x_zspec_int = np.arange(-offset, offset, step)
-midpoint = len(x_zspec_int) // 2
-int3 = np.arange(midpoint-1, -1, -1)
-int4 = np.arange(midpoint, len(x_zspec_int))
-x_arex = np.arange(0, offset, step)
-# Interpolate zspec data
-y_zspec_int = PchipInterpolator(x_zspec, z_spec)(x_zspec_int)
-AREX = 1 / y_zspec_int[int4] - 1 / y_zspec_int[int3]
-plt.plot(x_arex, AREX)
+    if zspec.ndim > 1:
+        MTR_REX = []
+        for i, _ in enumerate(zspec):
+            x_lab, mtr_rex = single_Z_to_MTR_REX(x_zspec, zspec[i])
+            MTR_REX.append(mtr_rex)
+        return x_lab, np.array(MTR_REX)
+    else:
+        return single_Z_to_MTR_REX(x_zspec, zspec)

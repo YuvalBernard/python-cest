@@ -7,7 +7,7 @@ from scipy.signal import find_peaks, savgol_filter
 
 def Z_to_MTR_Assym(offsets, data):
     def locate_peaks(data, prominence: float):
-        idx, _ = find_peaks(data, prominence)
+        idx, _ = find_peaks(data, prominence=prominence)
         if len(idx) == 0:
             prominence /= 1.5
             return locate_peaks(data, prominence)
@@ -32,8 +32,8 @@ def Z_to_MTR_Assym(offsets, data):
     else:
         spectrum = np.flip(data, axis=-1) - data
     filt = savgol_filter(spectrum, 15, 2)
-    prominence = locate_peaks(filt, 0.5)
-    peak_loc, _ = find_peaks(filt, prominence)
+    prominence = locate_peaks(filt, 0.05)
+    peak_loc, _ = find_peaks(filt, prominence=prominence)
     if offsets[peak_loc] > 0:
         N = len(offsets[ds_loc:])
         x_lab = np.linspace(offsets[ds_loc], offsets[-1], N)
@@ -53,7 +53,7 @@ def Z_to_MTR_Assym(offsets, data):
         z_ref = np.flip(PchipInterpolator(offsets, data)(x_ref))
         MTR = z_ref - z_lab
 
-    QUOTIENT_TO_SKIP = 0.1
+    QUOTIENT_TO_SKIP = 0.
     idx1 = int(N * QUOTIENT_TO_SKIP)
     idx2 = int(N * (1 - QUOTIENT_TO_SKIP))
     if offsets[peak_loc] > 0:

@@ -111,7 +111,7 @@ plt.plot(x_lab, MTR.T)
 
 def Z_to_MTR_Assym(offsets, data):
     def locate_peaks(data, prominence: float):
-        idx, _ = find_peaks(data, prominence)
+        idx, _ = find_peaks(data, prominence=prominence)
         if len(idx) == 0:
             prominence /= 1.5
             return locate_peaks(data, prominence)
@@ -136,8 +136,8 @@ def Z_to_MTR_Assym(offsets, data):
     else:
         spectrum = np.flip(data, axis=-1) - data
     filt = savgol_filter(spectrum, 15, 2)
-    prominence = locate_peaks(filt, 0.5)
-    peak_loc, _ = find_peaks(filt, prominence)
+    prominence = locate_peaks(filt, 0.05)
+    peak_loc, _ = find_peaks(filt, prominence=prominence)
     if offsets[peak_loc] > 0:
         N = len(offsets[ds_loc:])
         x_lab = np.linspace(offsets[ds_loc], offsets[-1], N)
@@ -157,21 +157,21 @@ def Z_to_MTR_Assym(offsets, data):
         z_ref = np.flip(PchipInterpolator(offsets, data)(x_ref))
         MTR = z_ref - z_lab
 
-    QUOTIENT_TO_SKIP = 0.05
+    QUOTIENT_TO_SKIP = 0.
     idx1 = int(N * QUOTIENT_TO_SKIP)
     idx2 = int(N * (1 - QUOTIENT_TO_SKIP))
     if offsets[peak_loc] > 0:
-        MTR = MTR[:, idx1:idx2]
-        x_lab = x_lab[idx1:idx2]
+        MTR = MTR[:, idx1:]
+        x_lab = x_lab[idx1:]
     else:
-        MTR = MTR[:, idx2:idx1]
-        x_lab = x_lab[idx2:idx1]
+        MTR = MTR[:, :idx2]
+        x_lab = x_lab[:idx2]
     return x_lab, MTR
 
 
 import pandas as pd
 
-df = pd.read_excel("/home/yuval/Documents/Weizmann/python-cest/example_data.xlsx")
+df = pd.read_excel("/home/yuval/Documents/Weizmann/python-cest-bkp/fresh-start/results/H-CEST-0.02-single-sim-symbolic/data.xlsx")
 offsets = df["ppm"].astype(float).to_numpy()
 data = df.drop("ppm", axis=1).astype(float).T.to_numpy()
 x_mtr, y_mtr = Z_to_MTR_Assym(offsets, data)

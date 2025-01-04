@@ -6,56 +6,75 @@ import matplotlib.pyplot as plt
 import sympy as sp
 from pyutil import filereplace
 
-plt.style.use("bmh")
 jax.config.update("jax_enable_x64", True)
 
 
 # Save solution to Bloch-McConnell equations to file.
 def solve_bloch_mcconnell():
-    R1a, R2a, dwa, R1b, R2b, k, f, dwb, offset, power, B0, gamma, tp = sp.symbols(
+    R1a, R2a, dwa_, R1b, R2b, k, f, dwb_, offset_, power_, B0, gamma, tp = sp.symbols(
         "R1a, R2a, dwa, R1b, R2b, k, f, dwb, offset, power, B0, gamma, tp", real=True
     )
+    offset = offset_ * B0 * gamma
+    dwa = dwa_ * B0 * gamma
+    dwb = dwb_ * B0 * gamma
+    power = power_ * gamma
     ka = f * k
     # Define coefficient matrix of BM equations
     A = sp.Matrix(
         [
-            [-(R2a + ka), (dwa - offset) * B0 * gamma, 0, k, 0, 0],
-            [(offset - dwa) * B0 * gamma, -(R2a + ka), power * gamma, 0, k, 0],
-            [0, -power * gamma, -(R1a + ka), 0, 0, k],
-            [ka, 0, 0, -(R2b + k), (dwb - offset) * B0 * gamma, 0],
-            [0, ka, 0, (offset - dwb) * B0 * gamma, -(R2b + k), power * gamma],
-            [0, 0, ka, 0, -power * gamma, -(R1b + k)],
+            [-(R2a + ka), dwa - offset, 0, k, 0, 0],
+            [offset - dwa, -(R2a + ka), power, 0, k, 0],
+            [0, -power, -(R1a + ka), 0, 0, k],
+            [ka, 0, 0, -(R2b + k), dwb - offset, 0],
+            [0, ka, 0, offset - dwb, -(R2b + k), power],
+            [0, 0, ka, 0, -power, -(R1b + k)],
         ]
     )
-
-    # Define non-homogeneous part of BM-equations
+    A_prime = sp.Matrix(
+        [
+            [-ka, dwa - offset, 0, k, 0, 0],
+            [offset - dwa, -ka, power, 0, k, 0],
+            [0, -power, -ka, 0, 0, k],
+            [ka, 0, 0, -(R2b + k), dwb - offset, 0],
+            [0, ka, 0, offset - dwb, -(R2b + k), power],
+            [0, 0, ka, 0, -power, -(R1b + k)],
+        ]
+    )
+    sin2 = power**2 / (power**2 + (offset - dwa) ** 2)
+    cos2 = (offset - dwa) ** 2 / (power**2 + (offset - dwa) ** 2)
     b = sp.Matrix([0, 0, R1a, 0, 0, R1b * f])
-    theta = sp.atan(power / (B0 * (offset - dwa)))
-    # lambda_eff = (R1a * sp.cos(theta) + R2a * sp.sin(theta)).simplify()
-    method = "lu"
-    A_perturbed = A.subs(k, 0)
+
     # coeffs = list(reversed(A.charpoly().coeffs()))
-    # lambda_1 = -6 * coeffs[0] / (coeffs[1] + sp.sqrt(25 * coeffs[1] ** 2 - 60 * coeffs[0] * coeffs[2]))
-    lambda_eff = A_perturbed.det(method) / A_perturbed.adjugate(method).trace()
-    A_rescaled = A - sp.eye(6) * lambda_eff
+    # lambda_1 = -coeffs[0] / (coeffs[1]  - coeffs[2]*coeffs[0]/coeffs[1])
 
-    lambda_1 = A_rescaled.det(method) / A_rescaled.adjugate(method).trace() + lambda_eff
+    lambda_eff = -(R1a * cos2 + R2a * sin2)
+    coeffs_prime = list(reversed(A_prime.charpoly().coeffs()))
+    lambda_ex_laguerre = -coeffs_prime[0] / (coeffs_prime[1] - coeffs_prime[2] * coeffs_prime[0] / coeffs_prime[1])
+    lambda_ex_trace = (-coeffs_prime[0] / coeffs_prime[1]).series(f, 0, 2).removeO()
+    # lambda_ex_trace = -coeffs_prime[0] / coeffs_prime[1]
+    lambda_1 = lambda_eff + sp.simplify(lambda_ex_trace)
     # Calculate steady-state solution
-    Z_ss = A.LUsolve(-b)[2]
-    # R1p = R1a * sp.cos(theta) ** 2 / Z_ss
-    # lambda_1 = -R1p
+    Z_ss = A.cramer_solve(-b, "laplace")[2]
+    # Z_ss = cos2 * R1a / -lambda_1
     # Simulate spectrum according to Zaiss 2013, 10.1002/nbm.2887
-    Z = (sp.cos(theta) ** 2 - Z_ss) * sp.exp(lambda_1 * tp) + Z_ss
+    Z = (cos2 - Z_ss) * sp.exp(lambda_1 * tp) + Z_ss
 
-    gen_eigenvalue = sp.lambdify(
-        [R1a, R2a, dwa, R1b, R2b, k, f, dwb, offset, power, B0, gamma],
-        lambda_1,
+    gen_eigenvalue_laguerre = sp.lambdify(
+        [R1a, R2a, dwa_, R1b, R2b, k, f, dwb_, offset_, power_, B0, gamma, tp],
+        lambda_eff + lambda_ex_laguerre,
+        modules="jax",
+        cse=True,
+        docstring_limit=0,
+    )
+    gen_eigenvalue_trace = sp.lambdify(
+        [R1a, R2a, dwa_, R1b, R2b, k, f, dwb_, offset_, power_, B0, gamma, tp],
+        lambda_eff + lambda_ex_trace,
         modules="jax",
         cse=True,
         docstring_limit=0,
     )
     gen_spectrum = sp.lambdify(
-        [R1a, R2a, dwa, R1b, R2b, k, f, dwb, offset, power, B0, gamma, tp],
+        [R1a, R2a, dwa_, R1b, R2b, k, f, dwb_, offset_, power_, B0, gamma, tp],
         Z,
         modules="jax",
         cse=True,
@@ -70,7 +89,25 @@ def solve_bloch_mcconnell():
     filereplace("src/solve_bloch_mcconnell.py", "exp", "jnp.exp")
     filereplace("src/solve_bloch_mcconnell.py", "abs", "jnp.absolute")
     filereplace("src/solve_bloch_mcconnell.py", "sqrt", "jnp.sqrt")
-    return gen_spectrum, gen_eigenvalue
+
+    with open("src/gen_eigenvalue_laguerre.py", "w") as text_file:
+        text_file.write("import jax.numpy as jnp\n")
+        text_file.write(inspect.getsource(gen_eigenvalue_laguerre))
+
+    filereplace("src/gen_eigenvalue_laguerre.py", "_lambdifygenerated", "gen_eigenvalue_laguerre")
+    filereplace("src/gen_eigenvalue_laguerre.py", "exp", "jnp.exp")
+    filereplace("src/gen_eigenvalue_laguerre.py", "abs", "jnp.absolute")
+    filereplace("src/gen_eigenvalue_laguerre.py", "sqrt", "jnp.sqrt")
+
+    with open("src/gen_eigenvalue_trace.py", "w") as text_file:
+        text_file.write("import jax.numpy as jnp\n")
+        text_file.write(inspect.getsource(gen_eigenvalue_trace))
+
+    filereplace("src/gen_eigenvalue_trace.py", "_lambdifygenerated", "gen_eigenvalue_trace")
+    filereplace("src/gen_eigenvalue_trace.py", "exp", "jnp.exp")
+    filereplace("src/gen_eigenvalue_trace.py", "abs", "jnp.absolute")
+    filereplace("src/gen_eigenvalue_trace.py", "sqrt", "jnp.sqrt")
+    return gen_spectrum, gen_eigenvalue_laguerre
 
 
 gen_spectrum_symbolic, gen_eigenvalue_symbolic = solve_bloch_mcconnell()
@@ -207,4 +244,4 @@ gen_spectrum_symbolic, gen_eigenvalue_symbolic = solve_bloch_mcconnell()
 # axs[2].set_title("Analytical")
 # fig.show()
 
-# jnp.linalg.norm(Z_numerical.flatten() - Z_symbolic.flatten())
+# jnp.linalg.norm(Z_numerical.flatten() - Z_symbolic.flatten()

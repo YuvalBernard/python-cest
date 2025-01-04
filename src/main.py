@@ -4,6 +4,7 @@ Module that defines the app structure
 
 import os
 import sys
+import time
 from pathlib import Path
 
 import arviz as az
@@ -13,7 +14,7 @@ import numpy as np
 import pandas as pd
 import pyqtgraph as pg
 import toml
-from PyQt6.QtCore import QObject, QRunnable, QSize, Qt, QThread, QThreadPool, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QObject, QRunnable, QSize, Qt, QThreadPool, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QApplication,
@@ -68,7 +69,7 @@ class DataPage(QWizardPage):
         self.label = QLabel("None selected.")
 
         self.normalize_button = QPushButton("Normalize Data")
-        self.normalize_button.clicked.connect(self.normalizeData)
+        self.normalize_button.clicked.connect(self.normalize_data)
 
         file_select_layout = QHBoxLayout()
         file_select_layout.addWidget(open_button)
@@ -86,7 +87,7 @@ class DataPage(QWizardPage):
         self.graphWidget.setLabel("left", "Z-value [a.u.]")
         self.graphWidget.setLabel("bottom", "offset [ppm]")
 
-    def normalizeData(self):
+    def normalize_data(self):
         self.wizard().data = pd.read_excel(self.wizard().filename)
         selected_option, ok = QInputDialog.getItem(
             self,
@@ -103,11 +104,11 @@ class DataPage(QWizardPage):
             else:
                 for col in self.wizard().data.columns[1:]:
                     self.wizard().data[col] /= self.wizard().data[col].max()
-            self.updateUi()
+            self.update_ui()
         else:
             return
 
-    def updateUi(self):
+    def update_ui(self):
         self.table.setData(self.wizard().data.T.to_dict())
 
         plot_and_table_layout = QHBoxLayout()
@@ -140,7 +141,7 @@ class DataPage(QWizardPage):
             except ValueError:
                 QMessageBox.warning(self, "Error", "The program only accepts data in xlsx format.")
                 return
-            self.updateUi()
+            self.update_ui()
 
 
 class ConstantsGroup(QGroupBox):
@@ -171,9 +172,9 @@ class ConstantsGroup(QGroupBox):
         self.parent.registerField("tp", tp_entry)
         self.parent.registerField("b1*", b1_entry)
 
-        layout.addWidget(makeBold(QLabel("Parameter")), 0, 0)
-        layout.addWidget(makeBold(QLabel("Value")), 0, 1)
-        layout.addWidget(makeBold(QLabel("Description")), 0, 2)
+        layout.addWidget(make_bold(QLabel("Parameter")), 0, 0)
+        layout.addWidget(make_bold(QLabel("Value")), 0, 1)
+        layout.addWidget(make_bold(QLabel("Description")), 0, 2)
         layout.addWidget(b0_label, 1, 0, alignment=Qt.AlignmentFlag.AlignTop)
         layout.addWidget(b0_entry, 1, 1, alignment=Qt.AlignmentFlag.AlignTop)
         layout.addWidget(b0_desc, 1, 2, alignment=Qt.AlignmentFlag.AlignTop)
@@ -202,9 +203,7 @@ class ConstantsGroup(QGroupBox):
                 b1_list = list(df.columns[1:].str.extract(r"([-+]?\d*\.?\d+)", expand=False))
                 try:
                     gamma = float(self.parent.field("gamma"))
-                    self.parent.setField(
-                        "b1", ", ".join([f"{float(b1)/gamma:.2f}" for b1 in b1_list])
-                    )
+                    self.parent.setField("b1", ", ".join([f"{float(b1)/gamma:.2f}" for b1 in b1_list]))
                 except ValueError:
                     QMessageBox.warning(self, "Info", "Please insert gyromagnetic ratio.")
 
@@ -302,13 +301,13 @@ class VariablesGroup(QGroupBox):
         fb_max = QLineEdit()
         dwb_max = QLineEdit()
 
-        layout.addWidget(makeBold(QLabel("Parameter")), 0, 0)
-        layout.addWidget(makeBold(QLabel("State")), 0, 1)
-        layout.addWidget(makeBold(QLabel("Min")), 0, 2)
-        layout.addWidget(makeBold(QLabel("Max")), 0, 3)
-        layout.addWidget(makeBold(QLabel("Init Value")), 0, 4)
-        layout.addWidget(makeBold(QLabel("Static Value")), 0, 5)
-        layout.addWidget(makeBold(QLabel("Description")), 0, 6)
+        layout.addWidget(make_bold(QLabel("Parameter")), 0, 0)
+        layout.addWidget(make_bold(QLabel("State")), 0, 1)
+        layout.addWidget(make_bold(QLabel("Min")), 0, 2)
+        layout.addWidget(make_bold(QLabel("Max")), 0, 3)
+        layout.addWidget(make_bold(QLabel("Init Value")), 0, 4)
+        layout.addWidget(make_bold(QLabel("Static Value")), 0, 5)
+        layout.addWidget(make_bold(QLabel("Description")), 0, 6)
 
         # Create registerFields to track values
         for i, (
@@ -433,16 +432,12 @@ class SolverGroup(QGroupBox):
 
         solver_list = QComboBox()
         solver_list.addItems(["Symbolic", "Analytical", "Numerical"])
-        self.parent.registerField(
-            "solver", solver_list, "currentText", QComboBox.currentTextChanged
-        )
+        self.parent.registerField("solver", solver_list, "currentText", QComboBox.currentTextChanged)
         solver_list.currentIndexChanged.connect(self.validateSolver)
 
         fitter_list = QComboBox()
         fitter_list.addItems(["Bayesian, MCMC", "Bayesian, ADVI", "Nonlinear Least Squares"])
-        self.parent.registerField(
-            "fitting_method", fitter_list, "currentText", QComboBox.currentTextChanged
-        )
+        self.parent.registerField("fitting_method", fitter_list, "currentText", QComboBox.currentTextChanged)
 
         selection_layout = QFormLayout()
         selection_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
@@ -450,7 +445,7 @@ class SolverGroup(QGroupBox):
         selection_layout.addRow("Fitting method:", fitter_list)
         layout.addLayout(selection_layout)
         layout.addSpacing(20)
-        layout.addWidget(makeBold(QLabel("Configure fitting method")))
+        layout.addWidget(make_bold(QLabel("Configure fitting method")))
 
         config_page = QStackedLayout()
         layout.addLayout(config_page)
@@ -459,9 +454,7 @@ class SolverGroup(QGroupBox):
         # Configure MCMC widget
         bayesian_mcmc_container = QWidget()
         bayesian_mcmc_layout = QFormLayout(bayesian_mcmc_container)
-        bayesian_mcmc_layout.setFieldGrowthPolicy(
-            QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint
-        )
+        bayesian_mcmc_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
 
         warmup_entry = QLineEdit("1000")
         samples_entry = QLineEdit("1000")
@@ -497,9 +490,7 @@ class SolverGroup(QGroupBox):
 
         least_squares_container = QWidget()
         least_squares_layout = QFormLayout(least_squares_container)
-        least_squares_layout.setFieldGrowthPolicy(
-            QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint
-        )
+        least_squares_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
 
         algorithm_entry = QComboBox()
         algorithm_entry.addItems(
@@ -507,7 +498,7 @@ class SolverGroup(QGroupBox):
                 "Levenberg-Marquardt",
                 "Trust Region Reflective",
                 "Basin-Hopping",
-                "Adaptive Memory Programming for Global Optimization",
+                "Differential Evolution",
             ]
         )
         self.parent.registerField(
@@ -525,9 +516,7 @@ class SolverGroup(QGroupBox):
             self.parent.setField("R1b_val", 1)
             self.parent.setField("R1b_vary", "Static")
             self.parent.variablesGroup.R1b_vary.setEnabled(False)
-            QMessageBox.information(
-                self, "Info", "Using the Analytical solver disables R1b for fitting!"
-            )
+            QMessageBox.information(self, "Info", "Using the Analytical solver disables R1b for fitting!")
         else:
             self.parent.variablesGroup.R1b_vary.setEnabled(True)
             self.parent.setField("R1b_vary", "Vary")
@@ -668,9 +657,7 @@ class ModelPage(QWizardPage):
                     par_min = float(self.field(min))
                     par_max = float(self.field(max))
                 except ValueError:
-                    QMessageBox.warning(
-                        self, "Warning", f"{name} is missing either min or max values."
-                    )
+                    QMessageBox.warning(self, "Warning", f"{name} is missing either min or max values.")
                     return False
             else:
                 par_min = None
@@ -688,9 +675,7 @@ class ModelPage(QWizardPage):
                     self.setField(init, par_value)
                 return False
 
-            self.wizard().model_parameters.add(
-                name=name, value=par_value, vary=par_varies, min=par_min, max=par_max
-            )
+            self.wizard().model_parameters.add(name=name, value=par_value, vary=par_varies, min=par_min, max=par_max)
         return True
 
 
@@ -717,7 +702,7 @@ class ResultPage(QWizardPage):
         self.page_layout = QVBoxLayout(self)
 
     def initUi(self):
-        clearLayout(self.page_layout)
+        clear_layout(self.page_layout)
         self.setTitle("Performing Fitting... Please Wait for the Process to Finish")
 
         self.spinner = WaitingSpinner(self)
@@ -784,15 +769,9 @@ class ResultPage(QWizardPage):
                 )
             case "Bayesian, ADVI":  # "Bayesian, ADVI"
                 fitting_method = bayesian_vi
-                optimizer_step_size = (
-                    float(step_size) if (step_size := self.field("optimizer_stepsize")) else None
-                )
-                optimizer_num_steps = (
-                    int(n_steps) if (n_steps := self.field("optimizer_num_steps")) else None
-                )
-                num_posterior_samples = (
-                    int(n_samples) if (n_samples := self.field("num_posterior_samples")) else None
-                )
+                optimizer_step_size = float(step_size) if (step_size := self.field("optimizer_stepsize")) else None
+                optimizer_num_steps = int(n_steps) if (n_steps := self.field("optimizer_num_steps")) else None
+                num_posterior_samples = int(n_samples) if (n_samples := self.field("num_posterior_samples")) else None
                 args = (
                     model_parameters,
                     self.model_args,
@@ -816,10 +795,13 @@ class ResultPage(QWizardPage):
         pool = QThreadPool.globalInstance()
         self.worker = Worker(fitting_method, args)
         self.worker.signal.completed.connect(self.summarize_fit)
+        self.start = time.perf_counter()
         pool.start(self.worker)
         self.spinner.start()
 
     def summarize_fit(self, result):
+        self.end = time.perf_counter()
+        print(f"elapsed time: {(self.end-self.start):.2g} seconds")
         self.fit_result = result
         self.spinner.stop()
         self.setTitle("Fit Summary")
@@ -855,12 +837,8 @@ class ResultPage(QWizardPage):
                 num_chains = int(self.field("num_chains"))
                 num_samples = int(self.field("num_samples"))
                 if (
-                    diagnostics["ess_tail"]
-                    .apply(lambda ess: ess / num_samples < 1 / num_chains)
-                    .any()
-                    or diagnostics["ess_bulk"]
-                    .apply(lambda ess: ess / num_samples < 1 / num_chains)
-                    .any()
+                    diagnostics["ess_tail"].apply(lambda ess: ess / num_samples < 1 / num_chains).any()
+                    or diagnostics["ess_bulk"].apply(lambda ess: ess / num_samples < 1 / num_chains).any()
                 ):
                     QMessageBox.warning(
                         self,
@@ -987,23 +965,15 @@ class ResultPage(QWizardPage):
                     )
                     self.best_fit_pars_mode = np.asarray(
                         [
-                            az.plots.plot_utils.calculate_point_estimate(
-                                "mode", posterior_samples[par]
-                            )
+                            az.plots.plot_utils.calculate_point_estimate("mode", posterior_samples[par])
                             if self.wizard().model_parameters[par].vary
                             else self.wizard().model_parameters[par].value
                             for par in self.wizard().model_parameters.keys()
                         ]
                     )
-                    self.best_fit_spectra_mean = self.solver(
-                        self.best_fit_pars_mean, *self.model_args
-                    ).T
-                    self.best_fit_spectra_median = self.solver(
-                        self.best_fit_pars_median, *self.model_args
-                    ).T
-                    self.best_fit_spectra_mode = self.solver(
-                        self.best_fit_pars_mode, *self.model_args
-                    ).T
+                    self.best_fit_spectra_mean = self.solver(self.best_fit_pars_mean, *self.model_args).T
+                    self.best_fit_spectra_median = self.solver(self.best_fit_pars_median, *self.model_args).T
+                    self.best_fit_spectra_mode = self.solver(self.best_fit_pars_mode, *self.model_args).T
 
                     pd.DataFrame(
                         np.c_[self.offsets, self.best_fit_spectra_mean],
@@ -1024,12 +994,10 @@ class ResultPage(QWizardPage):
                         kind="kde",
                         marginals=True,
                         divergences=True,
-                    ).flatten()[0].get_figure().savefig(
-                        os.path.join(saveDir, "pair_plot.pdf"), format="pdf"
+                    ).flatten()[0].get_figure().savefig(os.path.join(saveDir, "pair_plot.pdf"), format="pdf")
+                    az.plot_ess(self.idata, var_names=["~sigma"], relative=True).flatten()[0].get_figure().savefig(
+                        os.path.join(saveDir, "ess_plot.pdf"), format="pdf"
                     )
-                    az.plot_ess(self.idata, var_names=["~sigma"], relative=True).flatten()[
-                        0
-                    ].get_figure().savefig(os.path.join(saveDir, "ess_plot.pdf"), format="pdf")
                     with open(os.path.join(saveDir, "fit_summary.txt"), "w") as file:
                         file.write(f"Fitting method: {self.field("fitting_method")}\n")
                         file.write(f"Solver: {self.field("solver")}\n")
@@ -1045,9 +1013,7 @@ class ResultPage(QWizardPage):
                                 kind="stats",
                                 stat_funcs={
                                     "median": np.median,
-                                    "mode": lambda x: az.plots.plot_utils.calculate_point_estimate(
-                                        "mode", x
-                                    ),
+                                    "mode": lambda x: az.plots.plot_utils.calculate_point_estimate("mode", x),
                                 },
                             ).to_string()
                         )
@@ -1078,23 +1044,15 @@ class ResultPage(QWizardPage):
                     )
                     self.best_fit_pars_mode = np.asarray(
                         [
-                            az.plots.plot_utils.calculate_point_estimate(
-                                "mode", posterior_samples[par]
-                            )
+                            az.plots.plot_utils.calculate_point_estimate("mode", posterior_samples[par])
                             if self.wizard().model_parameters[par].vary
                             else self.wizard().model_parameters[par].value
                             for par in self.wizard().model_parameters.keys()
                         ]
                     )
-                    self.best_fit_spectra_mean = self.solver(
-                        self.best_fit_pars_mean, *self.model_args
-                    ).T
-                    self.best_fit_spectra_median = self.solver(
-                        self.best_fit_pars_median, *self.model_args
-                    ).T
-                    self.best_fit_spectra_mode = self.solver(
-                        self.best_fit_pars_mode, *self.model_args
-                    ).T
+                    self.best_fit_spectra_mean = self.solver(self.best_fit_pars_mean, *self.model_args).T
+                    self.best_fit_spectra_median = self.solver(self.best_fit_pars_median, *self.model_args).T
+                    self.best_fit_spectra_mode = self.solver(self.best_fit_pars_mode, *self.model_args).T
 
                     pd.DataFrame(
                         np.c_[self.offsets, self.best_fit_spectra_mean],
@@ -1134,9 +1092,7 @@ class ResultPage(QWizardPage):
                                 kind="stats",
                                 stat_funcs={
                                     "median": np.median,
-                                    "mode": lambda x: az.plots.plot_utils.calculate_point_estimate(
-                                        "mode", x
-                                    ),
+                                    "mode": lambda x: az.plots.plot_utils.calculate_point_estimate("mode", x),
                                 },
                             ).to_string()
                         )
@@ -1170,17 +1126,17 @@ class WizardApp(QWizard):
         self.addPage(self.resultPage)
 
 
-def clearLayout(layout):
+def clear_layout(layout):
     if layout is not None:
         while layout.count():
             child = layout.takeAt(0)
             if child.widget() is not None:
                 child.widget().deleteLater()
             elif child.layout() is not None:
-                clearLayout(child.layout())
+                clear_layout(child.layout())
 
 
-def makeBold(widget: QWidget):
+def make_bold(widget: QWidget):
     f = widget.font()
     f.setWeight(QFont.Weight.DemiBold)
     widget.setFont(f)

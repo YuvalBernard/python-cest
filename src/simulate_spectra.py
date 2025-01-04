@@ -12,10 +12,9 @@ import jax.numpy as jnp
 from jax import config
 from jax.scipy.linalg import expm
 
-config.update("jax_platform_name", "cpu")
-
-
 from solve_bloch_mcconnell import gen_spectrum_symbolic
+
+config.update("jax_platform_name", "cpu")
 
 
 @partial(jnp.vectorize, excluded=[0, 1, 3, 4, 5], signature="()->(k)")  # powers
@@ -65,6 +64,7 @@ def batch_gen_spectrum_numerical(model_parameters, offset, power, B0, gamma, tp)
 
 
 @partial(jnp.vectorize, excluded=[0, 1, 3, 4, 5], signature="()->(k)")  # powers
+@partial(jnp.vectorize, excluded=[0, 2, 3, 4, 5], signature="()->()")  # offsets
 def batch_gen_spectrum_symbolic(model_parameters, offset, power, B0, gamma, tp):
     R1a, R2a, dwa, R1b, R2b, k, f, dwb = model_parameters
     return gen_spectrum_symbolic(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offset, power, B0, gamma, tp)

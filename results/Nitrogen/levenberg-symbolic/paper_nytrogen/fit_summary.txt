@@ -1,0 +1,11 @@
+Fitting method: Nonlinear Least Squares
+Solver: Symbolic
+[[Variables]]
+    R1a:  1 (fixed)
+    R2a:  10 (fixed)
+    dwa:  0 (fixed)
+    R1b:  0.10000108 +/- 1.00718442 (1007.17%) (init = 5.05)
+    R2b:  9641.80930 +/- 749.147017 (7.77%) (init = 50500)
+    kb:   11.8523377 +/- 10.7434031 (90.64%) (init = 50.5)
+    fb:   0.04294542 +/- 0.03947355 (91.92%) (init = 0.0505)
+    dwb:  0.23906775 +/- 1.21225178 (507.07%) (init = 0)

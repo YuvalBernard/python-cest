@@ -5,34 +5,34 @@ tp = 10       # s
 
 # Longitudinal relaxation rate of abundant pool
 [Variables.R1a] # Hz
-vary = false
-# min =
-# max =
-# init =
-value = 0.33
+vary = true
+min = 0.1
+max = 0.5
+init = 0.3
+#value = 0.33
 
 # Transverse relaxation rate of abundant pool
 [Variables.R2a] # Hz
-vary = false
-# min =
-# max =
-# init =
-value = 0.5
+vary = true
+min = 0.3
+max = 1
+init = 0.5
+#value = 0.667
 
 # Larmor frequency of abundant pool relative to itself. Optimally zero.
 [Variables.dwa] # ppm
-vary = false
-# min =
-# max =
-# init =
-value = 0
+vary = true
+min = -1
+max = 1
+init = 0
+#value = 0
 
 # Longitudinal relaxation rate of dilute pool
 [Variables.R1b] # Hz
 vary = true
 min = 0.1
 max = 10
-init = 2
+init = 5.05
 # value =
 
 # Transverse relaxation rate of dilute pool
@@ -40,29 +40,29 @@ init = 2
 vary = true
 min = 1
 max = 100
-init = 10
+init = 50.5
 # value =
 
 # Forward exchange rate (dilute -> abundant pool)
 [Variables.kb] # Hz
 vary = true
-min = 50
-max = 500
-init = 100
+min = 1
+max = 100
+init = 50.5
 # value =
 
 # Dilute pool equilibrium magnetization; fraction relative to abundant pool
 [Variables.fb] # unitless, 0 to 1
 vary = true
-min = 1e-5
-max = 5e-3
-init = 1e-3
+min = 1e-4
+max = 0.01
+init = 0.00505
 # value =
 
 # Larmor frequency of dilute pool relative to abundant pool
 [Variables.dwb] # ppm
-vary = false
-# min = 0.01
-# max = 1000
-# init = 0.1
-value = 3.5
+vary = true
+ min = 3
+ max = 4
+ init = 3.5
+#value = 3.5

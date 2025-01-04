@@ -35,6 +35,7 @@ import lmfit
 import numpy as np
 import numpyro
 import numpyro.distributions as dist
+from numpyro.infer.util import init_to_value
 
 jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_platform_name", "cpu")
@@ -76,13 +77,13 @@ def least_squares(
     fitter = lmfit.Minimizer(userfcn=objective, params=model_parameters, fcn_args=(model_args, data, method_jitted))
     match algorithm:
         case "Levenberg-Marquardt":
-            fit = fitter.leastsq()
+            fit = fitter.minimize(method="leastsq")
         case "Trust Region Reflective":
-            fit = fitter.least_squares()
+            fit = fitter.minimize(method="least_squares")
         case "Basin-Hopping":
-            fit = fitter.basinhopping()
-        case "Adaptive Memory Programming for Global Optimization":
-            fit = fitter.ampgo()
+            fit = fitter.minimize(method="basinhopping")
+        case "Differential Evolution":
+            fit = fitter.minimize(method="differential_evolution")
     return {"fit": fit.params}
 
 
@@ -111,15 +112,21 @@ def bayesian_mcmc(
     # such that the distance between the mean and (min, max) is 3*sigma.
     for par in list(model_parameters.keys()):
         if model_parameters[par].vary:
-            if par in ["dwa", "dwb"]:
-                model_parameters[par].prior = dist.Uniform(model_parameters[par].min, model_parameters[par].max)
-            elif par in ["R1a", "R2a", "R1b", "R2b", "kb", "fb"]:
-                model_parameters[par].prior = dist.TruncatedNormal(
-                    (model_parameters[par].min + model_parameters[par].max) / 2,
-                    (model_parameters[par].max - model_parameters[par].min) / 6,
-                    low=model_parameters[par].min,
-                    high=model_parameters[par].max,
-                )
+            model_parameters[par].prior = dist.TruncatedNormal(
+                (model_parameters[par].min + model_parameters[par].max) / 2,
+                (model_parameters[par].max - model_parameters[par].min) / 6,
+                low=model_parameters[par].min,
+                high=model_parameters[par].max,
+            )
+            # if par in ["dwa", "dwb"]:
+            #     model_parameters[par].prior = dist.Uniform(model_parameters[par].min, model_parameters[par].max)
+            # elif par in ["R1a", "R2a", "R1b", "R2b", "kb", "fb"]:
+            #     model_parameters[par].prior = dist.TruncatedNormal(
+            #         (model_parameters[par].min + model_parameters[par].max) / 2,
+            #         (model_parameters[par].max - model_parameters[par].min) / 6,
+            #         low=model_parameters[par].min,
+            #         high=model_parameters[par].max,
+            #     )
 
     # Define probabilistic model for both Bayesian protocols
     def probabilistic_model(model_parameters, model_args, data, method) -> None:
@@ -132,14 +139,13 @@ def bayesian_mcmc(
                 for par in list(model_parameters.keys())
             ]
         )
-        sigma = numpyro.sample("sigma", dist.HalfNormal(0.03))
+        sigma = numpyro.sample("sigma", dist.Gamma(2, 100))
         model_pred = method(fit_pars, offsets, powers, B0, gamma, tp)
         numpyro.sample("obs", dist.Normal(model_pred, sigma), obs=data)
 
+    init_values = {model_parameters[par].name: model_parameters[par].value for par in list(model_parameters.keys())}
     mcmc = numpyro.infer.MCMC(
-        numpyro.infer.NUTS(
-            probabilistic_model,
-        ),
+        numpyro.infer.NUTS(probabilistic_model, init_strategy=init_to_value(values=init_values), dense_mass=False),
         num_warmup=num_warmup,
         num_samples=num_samples,
         num_chains=num_chains,
@@ -194,14 +200,14 @@ def bayesian_vi(
                 for par in list(model_parameters.keys())
             ]
         )
-        sigma = numpyro.sample("sigma", dist.HalfNormal(0.03))
+        sigma = numpyro.sample("sigma", dist.Gamma(2, 100))
         model_pred = method(fit_pars, offsets, powers, B0, gamma, tp)
         numpyro.sample("obs", dist.Normal(model_pred, sigma), obs=data)
 
     guide = numpyro.infer.autoguide.AutoMultivariateNormal(probabilistic_model)
     optimizer = numpyro.optim.RMSProp(step_size=optimizer_step_size)
     svi = numpyro.infer.SVI(probabilistic_model, guide, optimizer, loss=numpyro.infer.Trace_ELBO())
-    svi_result = svi.run(jax.random.key(1), num_steps, model_parameters, model_args, data, method, progress_bar=False)
+    svi_result = svi.run(jax.random.key(1), num_steps, model_parameters, model_args, data, method, progress_bar=True)
     # Get posterior samples
     posterior_samples = guide.sample_posterior(jax.random.key(2), svi_result.params, sample_shape=(num_samples,))
     return {"fit": posterior_samples, "loss": svi_result.losses}

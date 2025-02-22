@@ -1,19 +1,19 @@
 import jax.numpy as jnp
-def gen_spectrum_symbolic(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offset, power, B0, gamma, tp):
-    x0 = f*k
+def gen_spectrum_symbolic(R1a, R2a, dwa, R1b, R2b, kb, fb, dwb, offset, power, B0, gamma, tp):
+    x0 = fb*kb
     x1 = R2a + x0
     x2 = -x1
-    x3 = R2b + k
+    x3 = R2b + kb
     x4 = gamma**2
     x5 = power**2
     x6 = x4*x5
-    x7 = R1b*f
+    x7 = R1b*fb
     x8 = x0*x3
-    x9 = -R1b - k
+    x9 = -R1b - kb
     x10 = R1a*x9
     x11 = -x3
-    x12 = f**2
-    x13 = k**2
+    x12 = fb**2
+    x13 = kb**2
     x14 = x12*x13
     x15 = R1b*x14
     x16 = x11*x15
@@ -25,36 +25,36 @@ def gen_spectrum_symbolic(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offset, power, B0,
     x22 = x20*x21
     x23 = x11*x9 + x6
     x24 = x11*x23 + x21**2*x9
-    x25 = -R1a*x24 - k*(x17*x7 + x22*x7)
+    x25 = -R1a*x24 - kb*(x17*x7 + x22*x7)
     x26 = -dwa*x18 - x19
     x27 = x0*x21
     x28 = x10*x27
-    x29 = f**3
-    x30 = k**3
-    x31 = k*x6
+    x29 = fb**3
+    x30 = kb**3
+    x31 = kb*x6
     x32 = x0*x23
     x33 = x21*x6
-    x34 = f*x13
+    x34 = fb*x13
     x35 = x12*x30
     x36 = R1a + x0
     x37 = x36*x9
     x38 = x27*x37
     x39 = -x36
-    x40 = -k*(-x0*x17 - x0*x22) + x24*x39
+    x40 = -kb*(-x0*x17 - x0*x22) + x24*x39
     x41 = gamma*power
     x42 = x11*x35
-    x43 = (-k*(-k*(-R1a*x14*x9 + R1b*x12*x31 + R1b*x29*x30) + x1*(R1a*x32 - x16) + x26*(x15*x20 + x28 - x33*x7)) + x2*(-k*(x10*x8 + x16 - x3*x6*x7) + x2*x25) + x26*(-k*(-x15*x21 + x28) + x25*x26))/(-k*(-k*(-k**4*x29 + x12*x13*x39*x9 - x14*x6) + x1*(x32*x36 + x42) + x26*(-x20*x35 + x27*x6 + x38) + x41*(x32*x41 + x35*x41)) + x2*(-k*(x37*x8 - x42 + x6*x8) + x2*x40 - x41*(-x24*x41 + x3*x34*x41)) + x26*(-k*(x21*x35 + x38) + x26*x40 - x33*x34))
+    x43 = (-kb*(-kb*(-R1a*x14*x9 + R1b*x12*x31 + R1b*x29*x30) + x1*(R1a*x32 - x16) + x26*(x15*x20 + x28 - x33*x7)) + x2*(-kb*(x10*x8 + x16 - x3*x6*x7) + x2*x25) + x26*(-kb*(-x15*x21 + x28) + x25*x26))/(-kb*(-kb*(-kb**4*x29 + x12*x13*x39*x9 - x14*x6) + x1*(x32*x36 + x42) + x26*(-x20*x35 + x27*x6 + x38) + x41*(x32*x41 + x35*x41)) + x2*(-kb*(x37*x8 - x42 + x6*x8) + x2*x40 - x41*(-x24*x41 + x3*x34*x41)) + x26*(-kb*(x21*x35 + x38) + x26*x40 - x33*x34))
     x44 = x26**2
     x45 = (x44 + x6)**(-1.0)
     x46 = R2b*x13
     x47 = x46*x5
     x48 = R1b*x5
-    x49 = R2b*k
+    x49 = R2b*kb
     x50 = x48*x49
     x51 = B0**2
     x52 = R2b**2
     x53 = power**4*x4
-    x54 = k*x52
+    x54 = kb*x52
     x55 = dwa**2
     x56 = R1b*x51
     x57 = x52*x56
@@ -87,7 +87,7 @@ def gen_spectrum_symbolic(R1a, R2a, dwa, R1b, R2b, k, f, dwb, offset, power, B0,
     x84 = x30*x51
     x85 = x51*x54
     x86 = 2*x46
-    x87 = k*x64
-    x88 = k*x60
+    x87 = kb*x64
+    x88 = kb*x60
     x89 = dwa*x88
-    return x43 + (-x43 + x44*x45)*jnp.exp(tp*(-R1a*x44*x45 - R2a*x45*x6 + f*k*(2*dwa*dwb*k*x4*x5*x51 - x47 - x50 - x83)/(k*x53 + k*x61 + x13*x48 + x30*x5 + 2*x31*x70 - x46*x51*x79 + 2*x47 + 2*x50 + x55*x84 + x55*x85 + x58*x84 + x58*x85 + x58*x87 + x62*x87 + x67*x88 + x68*x86 + x70*x86 - x71*x73 - x71*x81 - x73*x84 - x73*x85 - x74*x89 - x76*x88 - x80*x88 - x81*x87 + x82*x89 + x83)))
+    return x43 + (-x43 + x44*x45)*jnp.exp(tp*(-R1a*x44*x45 - R2a*x45*x6 + fb*kb*(2*dwa*dwb*kb*x4*x5*x51 - x47 - x50 - x83)/(kb*x53 + kb*x61 + x13*x48 + x30*x5 + 2*x31*x70 - x46*x51*x79 + 2*x47 + 2*x50 + x55*x84 + x55*x85 + x58*x84 + x58*x85 + x58*x87 + x62*x87 + x67*x88 + x68*x86 + x70*x86 - x71*x73 - x71*x81 - x73*x84 - x73*x85 - x74*x89 - x76*x88 - x80*x88 - x81*x87 + x82*x89 + x83)))

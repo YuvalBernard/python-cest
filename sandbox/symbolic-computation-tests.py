@@ -81,32 +81,32 @@ def solve_bloch_mcconnell():
         # cse=lambda expr: sp.cse(expr, order="none", optimizations="basic", list=False),
         docstring_limit=0,
     )
-    with open("src/solve_bloch_mcconnell.py", "w") as text_file:
+    with open("../src/solve_bloch_mcconnell.py", "w") as text_file:
         text_file.write("import jax.numpy as jnp\n")
         text_file.write(inspect.getsource(gen_spectrum))
 
-    filereplace("src/solve_bloch_mcconnell.py", "_lambdifygenerated", "gen_spectrum_symbolic")
-    filereplace("src/solve_bloch_mcconnell.py", "exp", "jnp.exp")
-    filereplace("src/solve_bloch_mcconnell.py", "abs", "jnp.absolute")
-    filereplace("src/solve_bloch_mcconnell.py", "sqrt", "jnp.sqrt")
+    filereplace("../src/solve_bloch_mcconnell.py", "_lambdifygenerated", "gen_spectrum_symbolic")
+    filereplace("../src/solve_bloch_mcconnell.py", "exp", "jnp.exp")
+    filereplace("../src/solve_bloch_mcconnell.py", "abs", "jnp.absolute")
+    filereplace("../src/solve_bloch_mcconnell.py", "sqrt", "jnp.sqrt")
 
-    with open("src/gen_eigenvalue_laguerre.py", "w") as text_file:
+    with open("../src/gen_eigenvalue_laguerre.py", "w") as text_file:
         text_file.write("import jax.numpy as jnp\n")
         text_file.write(inspect.getsource(gen_eigenvalue_laguerre))
 
-    filereplace("src/gen_eigenvalue_laguerre.py", "_lambdifygenerated", "gen_eigenvalue_laguerre")
-    filereplace("src/gen_eigenvalue_laguerre.py", "exp", "jnp.exp")
-    filereplace("src/gen_eigenvalue_laguerre.py", "abs", "jnp.absolute")
-    filereplace("src/gen_eigenvalue_laguerre.py", "sqrt", "jnp.sqrt")
+    filereplace("../src/gen_eigenvalue_laguerre.py", "_lambdifygenerated", "gen_eigenvalue_laguerre")
+    filereplace("../src/gen_eigenvalue_laguerre.py", "exp", "jnp.exp")
+    filereplace("../src/gen_eigenvalue_laguerre.py", "abs", "jnp.absolute")
+    filereplace("../src/gen_eigenvalue_laguerre.py", "sqrt", "jnp.sqrt")
 
-    with open("src/gen_eigenvalue_trace.py", "w") as text_file:
+    with open("../src/gen_eigenvalue_trace.py", "w") as text_file:
         text_file.write("import jax.numpy as jnp\n")
         text_file.write(inspect.getsource(gen_eigenvalue_trace))
 
-    filereplace("src/gen_eigenvalue_trace.py", "_lambdifygenerated", "gen_eigenvalue_trace")
-    filereplace("src/gen_eigenvalue_trace.py", "exp", "jnp.exp")
-    filereplace("src/gen_eigenvalue_trace.py", "abs", "jnp.absolute")
-    filereplace("src/gen_eigenvalue_trace.py", "sqrt", "jnp.sqrt")
+    filereplace("../src/gen_eigenvalue_trace.py", "_lambdifygenerated", "gen_eigenvalue_trace")
+    filereplace("../src/gen_eigenvalue_trace.py", "exp", "jnp.exp")
+    filereplace("../src/gen_eigenvalue_trace.py", "abs", "jnp.absolute")
+    filereplace("../src/gen_eigenvalue_trace.py", "sqrt", "jnp.sqrt")
     return gen_spectrum, gen_eigenvalue_laguerre
 
 

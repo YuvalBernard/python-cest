@@ -39,7 +39,7 @@ from numpyro.infer.util import init_to_value
 
 jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_platform_name", "cpu")
-numpyro.set_host_device_count(4)
+numpyro.set_host_device_count(8)
 
 from simulate_spectra import (
     batch_gen_spectrum_analytical,
@@ -84,6 +84,33 @@ def least_squares(
             fit = fitter.minimize(method="basinhopping")
         case "Differential Evolution":
             fit = fitter.minimize(method="differential_evolution")
+
+    def sse(pars, args=model_args, data=data, method=method_jitted):
+        offsets, powers, B0, gamma, tp = args
+        fit_pars = jnp.array([
+            pars["R1a"],
+            pars["R2a"],
+            pars["dwa"],
+            pars["R1b"],
+            pars["R2b"],
+            pars["kb"],
+            pars["fb"],
+            pars["dwb"]
+        ])
+        return jnp.sum(jnp.square(data - method(fit_pars, offsets, powers, B0, gamma, tp)))
+
+    hess = jax.hessian(sse)(fit.params.valuesdict())
+    std_err = np.sqrt(fit.redchi * np.array([hess[i][i] for i in ["R1a", "R2a", "dwa", "R1b", "R2b", "kb", "fb",
+                                                                  "dwb"]]))
+    import pprint
+    pp = pprint.PrettyPrinter(depth=4)
+    pp.pprint(hess)
+    pcov_auto = fit.covar
+    std_err_auto = np.sqrt(np.diag(pcov_auto))
+    for i, name in enumerate(fit.var_names):
+        print(f"{name}: manual: {std_err[i]:.4g}, auto: {std_err_auto[i]:.4g}")
+    # print(f"Condition number: {np.linalg.cond(pcov_manual):.4g}")
+
     return {"fit": fit.params}
 
 
@@ -145,11 +172,12 @@ def bayesian_mcmc(
 
     init_values = {model_parameters[par].name: model_parameters[par].value for par in list(model_parameters.keys())}
     mcmc = numpyro.infer.MCMC(
-        numpyro.infer.NUTS(probabilistic_model, init_strategy=init_to_value(values=init_values), dense_mass=False),
+        numpyro.infer.NUTS(probabilistic_model,
+                               dense_mass=False, target_accept_prob=0.8),
         num_warmup=num_warmup,
         num_samples=num_samples,
         num_chains=num_chains,
-        chain_method="sequential",
+        chain_method="parallel",
         progress_bar=True,
     )
     mcmc.run(jax.random.key(1), model_parameters, model_args, data, method)

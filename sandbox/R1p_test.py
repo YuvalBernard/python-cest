@@ -55,7 +55,6 @@ def gen_R1p_zaiss(model_parameters, offset, power, B0, gamma):
     R1p = R_eff + R_ex
     return R1p
 
-
 @jit
 @partial(jnp.vectorize, excluded=[0, 1, 3, 4], signature="()->(k)")  # powers
 @partial(jnp.vectorize, excluded=[0, 2, 3, 4], signature="()->()")  # offsets
